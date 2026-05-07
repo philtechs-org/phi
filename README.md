@@ -186,7 +186,7 @@ If your root `package.json` declares a `workspaces` field, phi aggregates depend
 ```json
 { "workspaces": ["packages/*"] }
 ```
-
+ 
 Both array form and `{packages: [...]}` object form are supported.
 
 ## Private registries (.npmrc)
