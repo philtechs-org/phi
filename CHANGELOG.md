@@ -5,6 +5,54 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-05-08
+
+### Changed
+
+- `phi version` output trimmed to just `phi <version>`, matching the
+  npm/yarn/pnpm convention. The previous `(commit <hash>, built <date>)`
+  parenthetical is gone; the commit hash for any release is on its
+  GitHub Release page if you need it.
+
+## [0.1.1] — 2026-05-08
+
+### Added
+
+- `phi init [--yes] [--force] [--name … --version … --description … --author … --license …]` —
+  bootstrap a new project. Creates `package.json` (with sensible defaults from
+  the cwd basename), a starter `.gitignore`, and a stub `README.md`.
+- `phi do <script> [args…]` (alias `d`) — run a script from `package.json` with
+  `node_modules/.bin` prepended to PATH. Pre/post hooks (`pre<name>`, `post<name>`)
+  honored. Extra args pass through to the script. phi's distinctive verb;
+  reads naturally as "do dev" / "do migrate:js".
+- `phi exec <bin> [args…]` (alias `x`) — run a binary from `node_modules/.bin`.
+  Like `npm exec` / `pnpm exec`; never auto-installs.
+- Direct script shortcuts: `phi dev`, `phi build`, `phi start`, `phi test`,
+  `phi lint`, `phi preview`, `phi prod` — each equivalent to `phi do <name>`.
+- Single-letter command aliases: `phi i` / `phi a` (install), `phi u` (update),
+  `phi rm` (remove), `phi d` (do), `phi x` (exec).
+
+### Fixed
+
+- **Windows installer** (`install.ps1`):
+  - Replaced unicode arrows (`→`) with ASCII (`->`) — the previous version
+    showed `???` on consoles without UTF-8 rendering.
+  - Replaced the unsafe `setx PATH "<full path string>"` suggestion (which
+    truncates at 1024 chars and clobbers system PATH) with the idiomatic
+    `[Environment]::SetEnvironmentVariable('Path', "$env:Path;<dir>", 'User')`.
+- **Go 1.21 CI compatibility**: replaced `t.Chdir` (added in Go 1.24) with a
+  small package-level `chdir(t, dir)` helper that does `os.Chdir` + `t.Cleanup`.
+  CI now passes on Go 1.21 / 1.22 as advertised.
+
+### Changed
+
+- Install one-liners now use `phi.philtechs.org/install.{sh,ps1}` — short,
+  branded, and decoupled from the GitHub repo path. The Vercel-hosted site
+  proxies `/install.sh` and `/install.ps1` to the GitHub raw URLs, so the
+  scripts are still version-controlled in the repo.
+- Documentation site moved to **https://phi.philtechs.org** (Vercel) with
+  the new dark-on-bone "scanner / inspection lab" design.
+
 ## [0.1.0] — 2026-05-07
 
 First public release.
