@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>FAQ — phi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a href="index.html" class="brand">
+      <span class="glyph">φ</span>
+      <span class="name">phi</span>
+      <span class="meta">// secure pkg manager · v0.1.0</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="install.html">Install</a>
+      <a href="docs.html">Docs</a>
+      <a href="detectors.html">Detectors</a>
+      <a href="faq.html" class="live">FAQ</a>
+      <a href="https://github.com/philtechs-org/phi" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+    <div class="nav-right">
+      <span class="pulse"></span>
+      <span>v0.1.0 · MIT</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section class="page-head">
+  <div class="eyebrow"><span class="num">§ 04</span> <span>FAQ</span> <span class="dash"></span> <span>parity · false positives · ops</span></div>
+  <h1>The questions everyone <em>actually</em> asks.</h1>
+  <p class="intro">
+    Honest answers about what phi does, what it doesn't, and how it co-exists with the rest of your toolchain.
+  </p>
+</section>
+
+<section class="page-body">
+
+  <h2 data-num="01">Why doesn't phi run lifecycle scripts by default?</h2>
+  <p><code>preinstall</code> / <code>install</code> / <code>postinstall</code> in <code>package.json</code> is the single most-abused attack vector in npm. A compromised package can do anything as soon as you install it: download more code, exfiltrate environment variables, drop a backdoor. <code>npm install</code> runs these unconditionally.</p>
+  <p>phi treats lifecycle scripts as opt-in. Most packages don't need them; the ones that do (esbuild, sharp, native-binding installs) you allow per-package with <code>--allow-scripts esbuild,sharp</code>. This single decision closes the most common supply-chain vector.</p>
+
+  <h2 data-num="02">How does phi differ from <code>npm audit</code>?</h2>
+  <p><code>npm audit</code> checks resolved dependencies against npm's vulnerability database <em>after</em> installation. phi does that <strong>plus</strong>:</p>
+  <ul>
+    <li>Behavioral pattern matching — regex + AST, looking for malware signatures the audit DB doesn't know about</li>
+    <li>Smart, context-aware checks (own-config skip, lifecycle-script scoping)</li>
+    <li>OSV lookup (which mirrors GHSA, the source <code>npm audit</code> draws from)</li>
+    <li>All checks happen <em>before</em> code is on disk, not after</li>
+  </ul>
+
+  <h2 data-num="03">Can I use phi alongside npm / yarn / pnpm?</h2>
+  <p>Yes — phi reads <code>package.json</code> like the others and writes a separate <code>phi.lock</code>. You can keep your existing <code>package-lock.json</code> / <code>yarn.lock</code> / <code>pnpm-lock.yaml</code> for tools that expect them. phi never modifies them.</p>
+  <p>phi installs into <code>node_modules/</code> the same way the others do, so any tool that resolves modules from <code>node_modules/</code> (your bundler, your test runner, Node itself) just works.</p>
+
+  <h2 data-num="04">What happens when phi blocks or flags a package I trust?</h2>
+  <p>REVIEW-flagged packages prompt you. Read the report card to see which detector fired and decide.</p>
+  <p>BLOCKED packages refuse to install entirely. If you genuinely trust the package, you can lower the verdict by inspecting and opening an issue — phi's defaults are conservative and detector tuning is a public process.</p>
+  <div class="callout">If you want to install in spite of the flags, there's no global override flag — that would defeat the purpose. Either fix the detector pattern (PR welcome) or use <code>npm install</code> for that specific package while you investigate.</div>
+
+  <h2 data-num="05">What if osv.dev is down or I'm offline?</h2>
+  <p>Network failures are non-fatal. phi prints a warning that advisory data is unavailable and proceeds with just the static detectors. To skip the network call entirely (e.g. air-gapped CI), pass <code>--no-advisories</code>.</p>
+
+  <h2 data-num="06">Does phi work on Windows?</h2>
+  <p>Yes. The scanner, lockfile, cache, and resolver all work identically on Windows. <code>node_modules/.bin/</code> shims are written as <code>.cmd</code> files; workspace siblings link as junctions (no admin privilege needed).</p>
+
+  <h2 data-num="07">What about ARM64 (Apple Silicon, Linux ARM, AWS Graviton)?</h2>
+  <p>Pre-built binaries are published for darwin-arm64 and linux-arm64. The install script auto-detects.</p>
+
+  <h2 data-num="08">How do I install a private package from a self-hosted registry?</h2>
+  <p>Add a <code>.npmrc</code> to your project (or <code>$HOME</code>) declaring the registry and an auth token. phi reads it the same way npm does:</p>
+  <div class="snippet">
+<pre><code>@my-org:registry=https://npm.pkg.github.com/
+//npm.pkg.github.com/:_authToken=${GITHUB_PAT}</code></pre>
+    <button class="copy">copy</button>
+  </div>
+  <p>The <code>${GITHUB_PAT}</code> placeholder is substituted from your environment, so you can commit the <code>.npmrc</code> safely.</p>
+
+  <h2 data-num="09">What's not supported?</h2>
+  <ul>
+    <li>Git, file, and tarball dependency specs (<code>git+https://...</code>, <code>file:./local</code>, <code>https://x/y.tgz</code>) — phi warns and skips them in resolution</li>
+    <li>Older lockfile formats (npm v6 <code>package-lock.json</code>) — phi reads <code>phi.lock</code> only</li>
+    <li>Sandboxed dynamic analysis — phi is static-analysis only at this point</li>
+  </ul>
+
+  <h2 data-num="10">Why isn't there a detector for X?</h2>
+  <p>Likely either it's planned (open an issue), or it produces too many false positives at the regex/AST level (phi is conservative about what fires). The ten detectors are tuned against a 20-package real-world corpus to keep noise low; expanding the set requires the same tuning work.</p>
+
+  <h2 data-num="11">Is phi production-ready?</h2>
+  <p>v0.1.0 is feature-complete for typical Node.js projects (libraries, monorepos, projects with peer-dep heavy frameworks). It installs the 20-package real-world corpus cleanly with zero false-positive blocks. Expect breaking changes in 0.x as the detection model evolves — pin to a specific version in CI.</p>
+
+  <h2 data-num="12">Where do I report bugs / feature requests?</h2>
+  <p><a href="https://github.com/philtechs-org/phi/issues" style="color:var(--signal)">github.com/philtechs-org/phi/issues</a>. Especially valuable: false-positive reports against real-world packages, and missed-malware reports against known-bad packages.</p>
+
+  <div class="pager">
+    <a class="prev" href="detectors.html">
+      <span class="lbl">PREV · § 03</span>
+      <span class="ti">Detectors</span>
+    </a>
+    <a class="next" href="index.html">
+      <span class="lbl">BACK</span>
+      <span class="ti">Overview</span>
+    </a>
+  </div>
+
+</section>
+</div>
+
+<footer>
+  <div class="wrap foot-row">
+    <div>phi · Brayne / Philtechs · MIT licensed · <a href="https://github.com/philtechs-org/phi">github.com/philtechs-org/phi</a></div>
+    <div>built in Go · scanned at install · <span style="color:var(--signal)">●</span> OSV synced</div>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.snippet button.copy').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const code = btn.parentElement.querySelector('code');
+    if (!code) return;
+    navigator.clipboard.writeText(code.textContent.trim());
+    btn.textContent = 'ok ✓'; btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1400);
+  });
+});
+</script>
+
+</body>
+</html>

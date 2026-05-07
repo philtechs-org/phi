@@ -1,0 +1,1105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>phi — packages scanned before any code touches disk</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  :root {
+    --bg:        #0b0b0e;
+    --bg-2:      #111116;
+    --bg-3:      #16161c;
+    --ink:       #ece8df;
+    --ink-dim:   #9b988f;
+    --ink-mute:  #5d5b56;
+    --rule:      #26252b;
+    --rule-2:    #1d1c22;
+    --signal:    oklch(0.86 0.21 130);     /* hot lime — "the scanner" */
+    --signal-2:  oklch(0.86 0.21 130 / 0.14);
+    --signal-3:  oklch(0.86 0.21 130 / 0.30);
+    --crit:      oklch(0.72 0.19 27);
+    --high:      oklch(0.78 0.16 55);
+    --mod:       oklch(0.85 0.15 85);
+    --safe:      oklch(0.82 0.17 145);
+
+    --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  /* ------- shared chrome ------- */
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+  @media (max-width: 720px) { .wrap { padding: 0 20px; } }
+
+  .mono { font-family: var(--mono); font-feature-settings: "ss01","cv11"; }
+  .num  { font-variant-numeric: tabular-nums; }
+  .uc   { text-transform: uppercase; letter-spacing: .12em; }
+
+  .rule       { height: 1px; background: var(--rule); width: 100%; }
+  .rule-dash  { height: 1px; background-image: linear-gradient(to right, var(--rule) 0 6px, transparent 6px 12px); background-size: 12px 1px; }
+
+  /* ===========================================
+   * NAV
+   * ========================================= */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11,11,14,.78);
+    backdrop-filter: blur(10px) saturate(1.1);
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    height: 56px;
+    gap: 24px;
+  }
+  .brand {
+    display: inline-flex; align-items: baseline; gap: 10px;
+    font-family: var(--mono); font-weight: 600; letter-spacing: -.01em;
+  }
+  .brand .glyph {
+    font-family: "Inter Tight", serif; font-style: italic; font-weight: 500;
+    font-size: 22px; line-height: 1;
+    color: var(--signal);
+    transform: translateY(2px);
+  }
+  .brand .name { font-size: 15px; }
+  .brand .meta { font-size: 11px; color: var(--ink-mute); letter-spacing: .04em; }
+
+  .nav-links {
+    display: flex; gap: 4px;
+    background: var(--bg-2); border: 1px solid var(--rule);
+    border-radius: 999px; padding: 4px;
+  }
+  .nav-links a {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--ink-dim);
+    padding: 6px 12px; border-radius: 999px;
+    transition: .15s color, .15s background;
+  }
+  .nav-links a:hover { color: var(--ink); background: var(--bg-3); }
+  .nav-links a.live { color: var(--bg); background: var(--signal); }
+
+  .nav-right { justify-self: end; display: flex; align-items: center; gap: 14px; font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
+  .nav-right .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 0 var(--signal); animation: pulse 1.8s infinite; }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 oklch(0.86 0.21 130 / 0.6); }
+    70%  { box-shadow: 0 0 0 8px oklch(0.86 0.21 130 / 0); }
+    100% { box-shadow: 0 0 0 0 oklch(0.86 0.21 130 / 0); }
+  }
+
+  @media (max-width: 720px) {
+    .nav-row { grid-template-columns: 1fr auto; }
+    .nav-right { display: none; }
+    .nav-links a { padding: 5px 9px; font-size: 11px; }
+  }
+
+  /* ===========================================
+   * HERO
+   * ========================================= */
+  .hero {
+    position: relative;
+    border-bottom: 1px solid var(--rule);
+    overflow: hidden;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 48px;
+    padding: 80px 0 96px;
+    align-items: start;
+  }
+  @media (max-width: 980px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 40px; padding: 56px 0 64px; }
+  }
+
+  .hero-left .eyebrow {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+    border: 1px solid var(--rule); border-radius: 999px;
+    padding: 6px 10px 6px 8px;
+    margin-bottom: 28px;
+  }
+  .hero-left .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); }
+
+  .hero h1 {
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: clamp(40px, 6.4vw, 84px);
+    line-height: 1.0;
+    letter-spacing: -0.035em;
+    margin: 0 0 28px;
+    text-wrap: balance;
+  }
+  .hero h1 em {
+    font-style: italic; font-weight: 400;
+    color: var(--signal);
+  }
+  .hero h1 .strike {
+    position: relative; color: var(--ink-dim);
+    font-style: italic; font-weight: 400;
+  }
+  .hero h1 .strike::after {
+    content: ""; position: absolute; left: -2px; right: -2px; top: 56%;
+    height: 2px; background: var(--ink-dim);
+  }
+
+  .hero-sub {
+    font-size: 18px; color: var(--ink-dim);
+    max-width: 520px; line-height: 1.5;
+    margin: 0 0 32px;
+    text-wrap: pretty;
+  }
+  .hero-sub b { color: var(--ink); font-weight: 500; }
+
+  .install-strip {
+    display: flex; flex-direction: column; gap: 8px;
+    max-width: 580px;
+  }
+  .install-row {
+    display: grid;
+    grid-template-columns: 96px 1fr auto;
+    align-items: stretch;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--bg-2);
+    overflow: hidden;
+    transition: border-color .15s;
+  }
+  .install-row:hover { border-color: var(--rule); }
+  .install-row .platform {
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+    border-right: 1px solid var(--rule);
+    background: var(--bg-3);
+  }
+  .install-row code {
+    font-family: var(--mono); font-size: 13px; color: var(--ink);
+    padding: 14px 16px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .install-row code::-webkit-scrollbar { display: none; }
+  .install-row .copy {
+    background: transparent; border: none; border-left: 1px solid var(--rule);
+    color: var(--ink-mute);
+    width: 48px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px;
+    transition: .15s color, .15s background;
+  }
+  .install-row .copy:hover { color: var(--signal); background: var(--bg-3); }
+  .install-row .copy.ok    { color: var(--signal); }
+
+  /* hero CTA row */
+  .cta-row {
+    display: flex; gap: 12px; align-items: center;
+    margin-top: 22px; flex-wrap: wrap;
+  }
+  .btn {
+    font-family: var(--mono); font-size: 12px;
+    padding: 10px 14px; border-radius: 8px;
+    border: 1px solid var(--rule);
+    color: var(--ink-dim);
+    cursor: pointer;
+    transition: .15s all;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn:hover { color: var(--ink); border-color: var(--ink-mute); }
+  .btn.primary { background: var(--signal); color: var(--bg); border-color: var(--signal); }
+  .btn.primary:hover { background: oklch(0.92 0.18 130); border-color: oklch(0.92 0.18 130); color: var(--bg); }
+
+  /* ----- right panel: live scanner ----- */
+  .scanner {
+    position: relative;
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    background:
+      radial-gradient(120% 80% at 100% 0%, oklch(0.86 0.21 130 / 0.06), transparent 60%),
+      var(--bg-2);
+    overflow: hidden;
+    min-height: 460px;
+    display: flex; flex-direction: column;
+  }
+  .scanner-head {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg-3);
+  }
+  .scanner-title {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-dim);
+  }
+  .scanner-title .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--signal);
+    box-shadow: 0 0 8px var(--signal);
+    animation: pulse 1.8s infinite;
+  }
+  .scanner-stat {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+  }
+  .scanner-stat b { color: var(--ink); font-weight: 500; }
+
+  .scanner-body {
+    flex: 1;
+    position: relative;
+    padding: 8px 0;
+  }
+
+  .pkg-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1.5fr) 80px 88px 96px;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 18px;
+    font-family: var(--mono); font-size: 12px;
+    border-bottom: 1px dashed var(--rule-2);
+    position: relative;
+    color: var(--ink-dim);
+  }
+  .pkg-row:last-child { border-bottom: none; }
+  .pkg-row .idx { color: var(--ink-mute); font-size: 10px; }
+  .pkg-row .name { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pkg-row .name .ver { color: var(--ink-mute); }
+  .pkg-row .files { text-align: right; color: var(--ink-mute); font-size: 11px; }
+  .pkg-row .score { text-align: right; }
+  .pkg-row .verdict { text-align: right; font-size: 10px; letter-spacing: .08em; }
+
+  .pkg-row.scanning::before {
+    content: ""; position: absolute; inset: 0 0 0 0;
+    background: linear-gradient(90deg, transparent, oklch(0.86 0.21 130 / 0.10), transparent);
+    pointer-events: none;
+    animation: sweep 1.2s linear infinite;
+  }
+  @keyframes sweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  .verdict-pill {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid currentColor;
+  }
+  .v-safe    { color: var(--safe); background: oklch(0.82 0.17 145 / 0.08); }
+  .v-review  { color: var(--mod);  background: oklch(0.85 0.15 85 / 0.08); }
+  .v-block   { color: var(--crit); background: oklch(0.72 0.19 27 / 0.10); }
+
+  .score-bar {
+    display: inline-flex; align-items: center; gap: 6px;
+    justify-content: flex-end; width: 100%;
+  }
+  .score-bar .num { color: var(--ink); }
+  .score-bar .meter {
+    width: 36px; height: 4px; border-radius: 2px;
+    background: var(--rule);
+    position: relative; overflow: hidden;
+  }
+  .score-bar .meter > i {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: currentColor;
+    border-radius: 2px;
+  }
+
+  .scanner-foot {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 1px solid var(--rule);
+    background: var(--bg-3);
+  }
+  .scanner-foot .cell {
+    padding: 12px 14px;
+    border-right: 1px solid var(--rule);
+    font-family: var(--mono);
+  }
+  .scanner-foot .cell:last-child { border-right: none; }
+  .scanner-foot .lbl { font-size: 10px; color: var(--ink-mute); letter-spacing: .08em; }
+  .scanner-foot .val { font-size: 16px; color: var(--ink); margin-top: 4px; }
+  .scanner-foot .val.signal { color: var(--signal); }
+  .scanner-foot .val.crit { color: var(--crit); }
+
+  /* corner ticks */
+  .ticks {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, transparent calc(100% - 1px), var(--rule) calc(100% - 1px)),
+      linear-gradient(to bottom, transparent calc(100% - 1px), var(--rule) calc(100% - 1px));
+  }
+
+  /* ===========================================
+   * SECTION CHROME
+   * ========================================= */
+  section.s {
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+  }
+  .s-head {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 24px;
+    padding: 32px 0 0;
+    align-items: baseline;
+  }
+  .s-num {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+    letter-spacing: .12em;
+  }
+  .s-eyebrow {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+    letter-spacing: .12em; text-transform: uppercase;
+  }
+  .s-title {
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: clamp(28px, 3.6vw, 44px);
+    letter-spacing: -.025em; line-height: 1.05;
+    margin: 16px 0 0;
+    text-wrap: balance;
+    max-width: 18ch;
+  }
+  .s-title em { font-style: italic; color: var(--signal); }
+  .s-body {
+    padding: 28px 0 64px;
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 24px;
+  }
+  .s-body > .col-2 { grid-column: 2; }
+
+  /* ===========================================
+   * §01 Why — problem rolling tape
+   * ========================================= */
+  .threat-tape {
+    position: relative;
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-2);
+  }
+  .tape-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg-3);
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+  }
+  .tape-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--rule);
+  }
+  @media (max-width: 720px) { .tape-grid { grid-template-columns: 1fr; } }
+
+  .threat {
+    padding: 22px 22px 26px;
+    background: var(--bg-2);
+    display: flex; flex-direction: column; gap: 10px;
+    min-height: 220px;
+  }
+  .threat .when {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+    display: flex; gap: 10px; align-items: center;
+  }
+  .threat .pkg-name {
+    font-family: var(--mono); font-size: 14px; color: var(--ink);
+  }
+  .threat .pkg-name b { color: var(--crit); }
+  .threat .desc {
+    font-size: 14px; color: var(--ink-dim);
+    flex: 1;
+    text-wrap: pretty;
+  }
+  .threat .impact {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+    border-top: 1px dashed var(--rule);
+    padding-top: 10px;
+  }
+  .threat .impact b { color: var(--ink); font-weight: 500; }
+
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 24px;
+  }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .compare .card {
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 22px;
+    background: var(--bg-2);
+  }
+  .compare .card.them { opacity: .85; }
+  .compare .card.us   { border-color: var(--signal-3); background: linear-gradient(180deg, oklch(0.86 0.21 130 / 0.04), var(--bg-2)); }
+  .compare .card h4 {
+    margin: 0 0 14px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--ink-mute); letter-spacing: .12em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .compare .card.us h4 { color: var(--signal); }
+  .compare ol {
+    list-style: none; padding: 0; margin: 0;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .compare li {
+    font-family: var(--mono); font-size: 13px;
+    color: var(--ink-dim);
+    display: grid;
+    grid-template-columns: 16px 1fr;
+    gap: 10px;
+    align-items: baseline;
+  }
+  .compare li .step { color: var(--ink-mute); font-size: 11px; }
+  .compare li .breach { color: var(--crit); font-weight: 500; }
+  .compare li .blocked { color: var(--signal); font-weight: 500; }
+
+  /* ===========================================
+   * §02 detector grid
+   * ========================================= */
+  .detectors {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  @media (max-width: 980px) { .detectors { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .detectors { grid-template-columns: 1fr; } }
+
+  .det {
+    background: var(--bg-2);
+    padding: 22px 20px 18px;
+    position: relative;
+    cursor: pointer;
+    transition: background .2s;
+    display: flex; flex-direction: column;
+    min-height: 200px;
+    overflow: hidden;
+  }
+  .det:hover { background: var(--bg-3); }
+  .det.is-active { background: var(--bg-3); }
+  .det.is-active::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 2px; background: var(--signal);
+  }
+  .det .top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 14px;
+  }
+  .det .sym {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+    letter-spacing: .08em;
+  }
+  .det .sev {
+    font-family: var(--mono); font-size: 10px;
+    padding: 2px 6px; border-radius: 3px;
+    border: 1px solid currentColor;
+    letter-spacing: .08em;
+  }
+  .det .sev.crit  { color: var(--crit); }
+  .det .sev.high  { color: var(--high); }
+  .det .name {
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: 18px;
+    letter-spacing: -.01em;
+    line-height: 1.15;
+    margin-bottom: 8px;
+    text-wrap: balance;
+  }
+  .det .lede {
+    font-size: 13px; color: var(--ink-dim); line-height: 1.45;
+    flex: 1;
+    text-wrap: pretty;
+  }
+  .det .pts {
+    margin-top: 12px;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+    display: flex; justify-content: space-between;
+  }
+  .det .pts b { color: var(--ink); font-weight: 500; }
+
+  /* expanded detail strip below */
+  .det-detail {
+    margin-top: 16px;
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    background: var(--bg-2);
+    padding: 22px;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 28px;
+  }
+  @media (max-width: 720px) { .det-detail { grid-template-columns: 1fr; } }
+  .det-detail .l .lbl { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); letter-spacing: .12em; text-transform: uppercase; margin-bottom: 6px; }
+  .det-detail .l .v   { font-family: var(--mono); font-size: 13px; color: var(--ink); margin-bottom: 14px; }
+  .det-detail .r p    { margin: 0 0 12px; color: var(--ink-dim); font-size: 14px; }
+  .det-detail .r p:last-child { margin-bottom: 0; }
+  .det-detail code {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--bg-3); border: 1px solid var(--rule);
+    border-radius: 4px; padding: 1px 5px; color: var(--ink);
+  }
+
+  /* ===========================================
+   * §03 Verdict gauge
+   * ========================================= */
+  .verdict-lab {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 24px;
+    align-items: stretch;
+  }
+  @media (max-width: 980px) { .verdict-lab { grid-template-columns: 1fr; } }
+
+  .gauge-wrap {
+    border: 1px solid var(--rule); border-radius: 14px;
+    background: var(--bg-2);
+    padding: 28px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .gauge-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-mute);
+  }
+  .gauge {
+    position: relative;
+    height: 52px;
+    border-radius: 8px;
+    background: var(--bg-3);
+    border: 1px solid var(--rule);
+    overflow: hidden;
+  }
+  .gauge .zone {
+    position: absolute; top: 0; bottom: 0;
+    display: flex; align-items: flex-end; justify-content: flex-start;
+    padding: 4px 8px;
+    font-family: var(--mono); font-size: 9px; color: var(--ink-mute);
+    letter-spacing: .12em;
+  }
+  .gauge .zone-safe   { left: 0;   width: 20%; background: oklch(0.82 0.17 145 / 0.10); border-right: 1px dashed var(--rule); }
+  .gauge .zone-review { left: 20%; width: 40%; background: oklch(0.85 0.15 85 / 0.10); border-right: 1px dashed var(--rule); }
+  .gauge .zone-block  { left: 60%; width: 40%; background: oklch(0.72 0.19 27 / 0.10); }
+  .gauge .needle {
+    position: absolute; top: -6px; bottom: -6px;
+    width: 2px; background: var(--ink);
+    box-shadow: 0 0 0 2px var(--bg);
+    transition: left .55s cubic-bezier(.7,.05,.2,1);
+  }
+  .gauge .needle::after {
+    content: ""; position: absolute; left: -5px; top: -4px;
+    width: 12px; height: 12px;
+    background: var(--ink); border-radius: 2px;
+  }
+  .gauge .ticks {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 100%;
+    display: flex; pointer-events: none;
+  }
+  .gauge .ticks i {
+    flex: 1; border-right: 1px solid var(--rule-2);
+  }
+  .gauge .ticks i:last-child { border-right: none; }
+
+  .gauge-readout {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .gauge-readout .score-big {
+    font-family: var(--mono); font-weight: 600;
+    font-size: 64px; line-height: 1; letter-spacing: -.04em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    transition: color .25s;
+  }
+  .gauge-readout .verdict-big {
+    font-family: var(--mono); font-size: 12px;
+    padding: 6px 10px; border-radius: 4px;
+    border: 1px solid currentColor;
+    letter-spacing: .12em;
+    align-self: start;
+  }
+  .gauge-readout .pkg-info {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--ink-dim);
+    text-align: right;
+  }
+  .gauge-readout .pkg-info b { color: var(--ink); font-weight: 500; }
+
+  .pkg-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .pkg-tab {
+    text-align: left;
+    background: var(--bg-3);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    font-family: var(--mono);
+    color: var(--ink-dim);
+    transition: .15s all;
+  }
+  .pkg-tab:hover { color: var(--ink); border-color: var(--ink-mute); }
+  .pkg-tab.active { color: var(--ink); border-color: var(--ink); background: var(--bg-2); }
+  .pkg-tab .nm { font-size: 12px; color: inherit; }
+  .pkg-tab .ds { font-size: 10px; color: var(--ink-mute); margin-top: 4px; letter-spacing: .04em; }
+
+  /* hits panel */
+  .hits {
+    border: 1px solid var(--rule); border-radius: 14px;
+    background: var(--bg-2);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .hits-head {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg-3);
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+  }
+  .hits-list {
+    flex: 1; padding: 6px 0;
+    min-height: 320px;
+  }
+  .hit {
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 18px;
+    border-bottom: 1px dashed var(--rule-2);
+    font-family: var(--mono); font-size: 12px;
+  }
+  .hit:last-child { border-bottom: none; }
+  .hit .sev {
+    font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    border: 1px solid currentColor; letter-spacing: .08em;
+    text-align: center;
+  }
+  .hit .sev.crit { color: var(--crit); }
+  .hit .sev.high { color: var(--high); }
+  .hit .sev.mod  { color: var(--mod); }
+  .hit .what { color: var(--ink); }
+  .hit .what .layer { color: var(--ink-mute); font-size: 10px; letter-spacing: .04em; margin-left: 6px; }
+  .hit .pts { color: var(--ink-mute); font-size: 11px; }
+  .hit .pts b { color: var(--ink); }
+
+  /* ===========================================
+   * §04 sample CLI
+   * ========================================= */
+  .cli {
+    border: 1px solid var(--rule); border-radius: 14px;
+    background: #050507;
+    overflow: hidden;
+  }
+  .cli-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg-3);
+    font-family: var(--mono); font-size: 11px;
+  }
+  .cli-head .tabs { display: flex; gap: 4px; }
+  .cli-head .tab {
+    color: var(--ink-mute); padding: 4px 10px; border-radius: 4px;
+    cursor: pointer; transition: .15s;
+  }
+  .cli-head .tab.active { color: var(--ink); background: var(--bg-2); }
+  .cli-body {
+    padding: 22px 24px;
+    font-family: var(--mono); font-size: 13px; line-height: 1.55;
+    color: var(--ink-dim);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .cli-body .pr { color: var(--signal); }
+  .cli-body .ok { color: var(--safe); }
+  .cli-body .wn { color: var(--mod); }
+  .cli-body .er { color: var(--crit); }
+  .cli-body .hi { color: var(--high); }
+  .cli-body .dim { color: var(--ink-mute); }
+  .cli-body .b   { color: var(--ink); font-weight: 500; }
+  .cli-body .sig { color: var(--signal); }
+
+  /* ===========================================
+   * §05 final cta
+   * ========================================= */
+  .final {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    padding: 80px 0;
+  }
+  @media (max-width: 980px) { .final { grid-template-columns: 1fr; padding: 56px 0; } }
+  .final h2 {
+    font-family: var(--sans); font-weight: 500;
+    font-size: clamp(36px, 5vw, 64px);
+    letter-spacing: -.03em; line-height: 1.0;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .final h2 em { font-style: italic; color: var(--signal); }
+  .final-right {
+    display: flex; flex-direction: column; gap: 14px;
+    align-self: end;
+  }
+  .final-card {
+    border: 1px solid var(--rule); border-radius: 12px;
+    padding: 18px 20px;
+    background: var(--bg-2);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 14px;
+  }
+  .final-card .lbl { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); letter-spacing: .08em; }
+  .final-card .ti  { font-family: var(--sans); font-size: 18px; margin-top: 4px; }
+  .final-card .arrow { font-family: var(--mono); color: var(--ink-mute); transition: .15s; }
+  .final-card:hover { border-color: var(--ink-mute); }
+  .final-card:hover .arrow { color: var(--signal); transform: translateX(3px); }
+
+  /* ===========================================
+   * FOOTER
+   * ========================================= */
+  footer {
+    border-top: 1px solid var(--rule);
+    padding: 40px 0 32px;
+  }
+  .foot-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--ink-mute);
+  }
+  .foot-row a:hover { color: var(--ink); }
+  .ascii {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--rule); white-space: pre; line-height: 1;
+    margin-top: 24px;
+    user-select: none;
+  }
+
+  /* utility */
+  .hidden-md { }
+  @media (max-width: 720px) {
+    .hide-sm { display: none; }
+    .s-head, .s-body { grid-template-columns: 1fr; }
+    .s-body > .col-2 { grid-column: 1; }
+    .s-num { display: none; }
+  }
+
+  ::selection { background: var(--signal); color: var(--bg); }
+</style>
+</head>
+
+<body>
+
+<!-- ============== NAV ============== -->
+<header class="nav">
+  <div class="wrap nav-row">
+    <a href="index.html" class="brand">
+      <span class="glyph">φ</span>
+      <span class="name">phi</span>
+      <span class="meta hide-sm">// secure pkg manager · v0.1.0</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html" class="live">Overview</a>
+      <a href="install.html">Install</a>
+      <a href="docs.html">Docs</a>
+      <a href="detectors.html">Detectors</a>
+      <a href="faq.html">FAQ</a>
+      <a href="https://github.com/philtechs-org/phi" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+    <div class="nav-right">
+      <span class="pulse"></span>
+      <span>v0.1.0 · MIT</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============== HERO ============== -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-left">
+      <span class="eyebrow">
+        <span class="dot"></span>
+        <span>v0.1.0 · 11 detectors · OSV · zero <span class="mono" style="color:var(--ink)">postinstall</span></span>
+      </span>
+
+      <h1>
+        Inspect every package <em>before</em>
+        a single line <span class="strike">touches your disk.</span>
+      </h1>
+
+      <p class="hero-sub">
+        <b>phi</b> is a Node.js package manager that scans every dependency &mdash; transitives included &mdash; with eleven detectors and the OSV feed before extraction. Lifecycle scripts are off by default. Built in Go, single static binary.
+      </p>
+
+      <div class="install-strip">
+        <div class="install-row">
+          <span class="platform">linux/mac</span>
+          <code id="ins-unix">curl -sSL https://raw.githubusercontent.com/philtechs-org/phi/main/install.sh | sh</code>
+          <button class="copy" data-target="ins-unix">copy</button>
+        </div>
+        <div class="install-row">
+          <span class="platform">windows</span>
+          <code id="ins-win">iwr -useb https://raw.githubusercontent.com/philtechs-org/phi/main/install.ps1 | iex</code>
+          <button class="copy" data-target="ins-win">copy</button>
+        </div>
+      </div>
+
+      <div class="cta-row">
+        <a href="docs.html" class="btn primary">Read the docs →</a>
+        <a href="https://github.com/philtechs-org/phi" target="_blank" class="btn">View on GitHub ↗</a>
+        <span class="mono" style="font-size:11px;color:var(--ink-mute)">MIT · Go 1.21+</span>
+      </div>
+    </div>
+
+    <!-- live scanner panel -->
+    <div id="scanner-mount"></div>
+  </div>
+</section>
+
+<!-- ============== §01 Why ============== -->
+<section class="s" id="why">
+  <div class="wrap">
+    <div class="s-head">
+      <div class="s-num">§01</div>
+      <div>
+        <div class="s-eyebrow">The problem</div>
+        <h2 class="s-title">npm is <em>shipping malware</em> on a schedule now.</h2>
+      </div>
+    </div>
+
+    <div class="s-body">
+      <div class="col-2">
+        <div class="threat-tape">
+          <div class="tape-head">
+            <span>recent supply-chain incidents · selected</span>
+            <span>source: GHSA + OpenSSF + reporters</span>
+          </div>
+          <div class="tape-grid">
+            <div class="threat">
+              <div class="when"><span>NOV 2018</span><span>·</span><span>buried transitive</span></div>
+              <div class="pkg-name"><b>event-stream</b> via flatmap-stream</div>
+              <div class="desc">A new maintainer added <span class="mono" style="color:var(--ink)">flatmap-stream</span> as a sub-dependency, which targeted users with the Copay Bitcoin wallet in their tree and stole private keys. ~2M weekly downloads.</div>
+              <div class="impact"><b>blast:</b> Copay wallet keys, downstream apps</div>
+            </div>
+            <div class="threat">
+              <div class="when"><span>OCT 2021</span><span>·</span><span>maintainer compromise</span></div>
+              <div class="pkg-name"><b>ua-parser-js</b>@0.7.29 / 0.8.0 / 1.0.0</div>
+              <div class="desc">Maintainer's npm account was compromised; three malicious versions were published containing a Linux/macOS crypto miner and a Windows password stealer. ~7M weekly downloads.</div>
+              <div class="impact"><b>blast:</b> mined CPU, stolen browser creds</div>
+            </div>
+            <div class="threat">
+              <div class="when"><span>JUL 2025</span><span>·</span><span>credential exfil</span></div>
+              <div class="pkg-name"><b>eslint-config-prettier</b></div>
+              <div class="desc">Compromised maintainer token published a malicious version that exfiltrated developer credentials. The package is in the dep tree of nearly every TypeScript project.</div>
+              <div class="impact"><b>blast:</b> developer tokens, npm publish creds</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="compare">
+          <div class="card them">
+            <h4><span style="color:var(--crit)">●</span> npm + audit + snyk</h4>
+            <ol>
+              <li><span class="step">01</span><span>resolve tree</span></li>
+              <li><span class="step">02</span><span>fetch tarballs</span></li>
+              <li><span class="step">03</span><span>extract to <code>node_modules</code></span></li>
+              <li><span class="step">04</span><span class="breach">postinstall executes ←  game over</span></li>
+              <li><span class="step">05</span><span>audit known CVEs · <span class="mono" style="color:var(--ink-mute)">too late</span></span></li>
+            </ol>
+          </div>
+          <div class="card us">
+            <h4><span style="color:var(--signal)">●</span> phi</h4>
+            <ol>
+              <li><span class="step">01</span><span>resolve tree</span></li>
+              <li><span class="step">02</span><span>fetch tarballs &amp; verify sha512</span></li>
+              <li><span class="step">03</span><span class="blocked">scan in-memory · 11 detectors + OSV</span></li>
+              <li><span class="step">04</span><span>verdict per package · block / review / install</span></li>
+              <li><span class="step">05</span><span>extract only what cleared · scripts off</span></li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== §02 Detectors ============== -->
+<section class="s" id="detectors">
+  <div class="wrap">
+    <div class="s-head">
+      <div class="s-num">§02</div>
+      <div>
+        <div class="s-eyebrow">Defense in depth</div>
+        <h2 class="s-title">Eleven detectors. Three layers. <em>One score.</em></h2>
+      </div>
+    </div>
+    <div class="s-body">
+      <div class="col-2">
+        <div id="detectors-mount"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== §03 Verdict gauge ============== -->
+<section class="s" id="verdict">
+  <div class="wrap">
+    <div class="s-head">
+      <div class="s-num">§03</div>
+      <div>
+        <div class="s-eyebrow">The score</div>
+        <h2 class="s-title">From a tarball to a <em>verdict</em>, in under a second.</h2>
+      </div>
+    </div>
+    <div class="s-body">
+      <div class="col-2">
+        <p class="mono" style="font-size:13px;color:var(--ink-dim);max-width:60ch;margin:0 0 24px;">
+          Each detector hit adds points. Sum &lt; 20 installs silently. 20–59 prompts. 60+ refuses, writes a report, exits non-zero. Pick a real package &mdash; watch the needle move.
+        </p>
+        <div id="verdict-mount"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== §04 CLI ============== -->
+<section class="s" id="cli">
+  <div class="wrap">
+    <div class="s-head">
+      <div class="s-num">§04</div>
+      <div>
+        <div class="s-eyebrow">Drop-in</div>
+        <h2 class="s-title">Reads <em>package.json</em>. Writes <em>node_modules</em>. That's the contract.</h2>
+      </div>
+    </div>
+    <div class="s-body">
+      <div class="col-2">
+        <div id="cli-mount"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== §05 Final ============== -->
+<section class="s">
+  <div class="wrap final">
+    <div>
+      <h2>Stop installing strangers' code <em>blind.</em></h2>
+      <p style="color:var(--ink-dim);font-size:18px;margin:24px 0 0;max-width:42ch;">Single binary. No daemon. No telemetry. No registry account required. MIT licensed.</p>
+      <div class="cta-row" style="margin-top:32px">
+        <a href="install.html" class="btn primary">Install phi →</a>
+        <a href="https://github.com/philtechs-org/phi" target="_blank" class="btn">View source ↗</a>
+      </div>
+    </div>
+    <div class="final-right">
+      <a href="install.html" class="final-card">
+        <div>
+          <div class="lbl">01 · INSTALL</div>
+          <div class="ti">Get the binary on your platform</div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+      <a href="docs.html" class="final-card">
+        <div>
+          <div class="lbl">02 · DOCS</div>
+          <div class="ti">Commands, flags, lockfiles, workspaces</div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+      <a href="detectors.html" class="final-card">
+        <div>
+          <div class="lbl">03 · DETECTORS</div>
+          <div class="ti">What each scoring signal means</div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+      <a href="faq.html" class="final-card">
+        <div>
+          <div class="lbl">04 · FAQ</div>
+          <div class="ti">npm/yarn parity, false positives, etc.</div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============== FOOTER ============== -->
+<footer>
+  <div class="wrap foot-row">
+    <div>
+      phi · Brayne / Philtechs · MIT licensed · <a href="https://github.com/philtechs-org/phi">github.com/philtechs-org/phi</a>
+    </div>
+    <div>
+      built in Go · scanned at install · <span style="color:var(--signal)">●</span> OSV synced
+    </div>
+  </div>
+  <div class="wrap ascii">
+   φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ  φ
+  </div>
+</footer>
+
+<!-- ============== INTERACTIVE ============== -->
+<script>
+// copy buttons
+document.querySelectorAll('.install-row .copy').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = document.getElementById(btn.dataset.target);
+    if (!target) return;
+    navigator.clipboard.writeText(target.textContent.trim());
+    btn.textContent = 'ok ✓';
+    btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1400);
+  });
+});
+</script>
+
+<script type="text/babel" src="phi-app.jsx"></script>
+
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Detectors — phi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a href="index.html" class="brand">
+      <span class="glyph">φ</span>
+      <span class="name">phi</span>
+      <span class="meta">// secure pkg manager · v0.1.0</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="install.html">Install</a>
+      <a href="docs.html">Docs</a>
+      <a href="detectors.html" class="live">Detectors</a>
+      <a href="faq.html">FAQ</a>
+      <a href="https://github.com/philtechs-org/phi" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+    <div class="nav-right">
+      <span class="pulse"></span>
+      <span>11 detectors · OSV layer</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section class="page-head">
+  <div class="eyebrow"><span class="num">§ 03</span> <span>Detectors</span> <span class="dash"></span> <span>scoring · thresholds · the 10</span></div>
+  <h1>Three layers. <em>One score.</em> Every package.</h1>
+  <p class="intro">
+    phi runs three layers on every package: pattern detectors (regex), AST-validated detectors (parsed JS), and a known-vulnerability check against OSV. Hits from any layer add to the same risk score.
+  </p>
+</section>
+
+<section class="page-body">
+
+  <h2 data-num="§ 01">Scoring</h2>
+  <table>
+    <thead><tr><th>Severity</th><th>Points</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge critical">CRITICAL</span></td><td>+35</td></tr>
+      <tr><td><span class="badge high">HIGH</span></td><td>+20</td></tr>
+      <tr><td><span class="badge moderate">MODERATE</span></td><td>+10</td></tr>
+      <tr><td><span class="badge low">LOW</span></td><td>+5</td></tr>
+    </tbody>
+  </table>
+  <p>Score is summed per package, capped at 100. Detections are deduplicated per detector — a noisy codebase doesn't artificially inflate the score.</p>
+
+  <h2 data-num="§ 02">Verdict thresholds</h2>
+  <table>
+    <thead><tr><th>Score</th><th>Verdict</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td>0 – 19</td><td><span class="badge safe">SAFE</span></td><td>Install silently.</td></tr>
+      <tr><td>20 – 59</td><td><span class="badge moderate">REVIEW</span></td><td>Prompt the developer (or fail in <code>--json</code> / <code>--frozen</code> mode).</td></tr>
+      <tr><td>60 – 100</td><td><span class="badge critical">BLOCKED</span></td><td>Refuse to install, write report, exit non-zero.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">The threshold is <b>60, not 50</b>: a single CRITICAL + HIGH combination (e.g. <code>eval</code> + <code>new Function</code> in pino's logger) lands in REVIEW for the user to decide. Real malware combines two CRITICAL signals (eval + cred theft = 70) and still trips.</div>
+
+  <h2 data-num="§ 03">The 11 detectors</h2>
+
+  <h3>01 · Arbitrary Code Execution <span class="badge critical">CRITICAL</span></h3>
+  <p>Direct execution of arbitrary code: <code>eval(...)</code>, <code>child_process.exec/spawn(...)</code>.</p>
+  <p><b>AST-validated</b> — phi parses <code>.js / .cjs / .mjs</code> files with goja and only fires on real CallExpressions. References inside string literals, comments, or identifier names are suppressed. eslint's source contains <code>eval</code> in regex patterns; AST validation correctly skips those.</p>
+
+  <h3>02 · Dynamic Code Compilation <span class="badge high">HIGH</span></h3>
+  <p>String-to-function compilation: <code>new Function(...)</code>.</p>
+  <p>Legitimately used by validator generators (zod, ajv), JSON serializers (<code>fast-json-stringify</code>), route compilers (<code>find-my-way</code>), formatters (prettier), stack-trace utilities (depd). Demoted to HIGH so a single hit lands in REVIEW; combined with a CRITICAL or another HIGH it can still escalate.</p>
+
+  <h3>03 · Code Obfuscation <span class="badge critical">CRITICAL</span></h3>
+  <p>Techniques used to hide malicious payloads.</p>
+  <ul>
+    <li>Hex-escape sequences of 6+ pairs <em>with diversity check</em> — uniform-byte runs (e.g. <code>\x07\x07\x07…</code>) are skipped because real obfuscators emit varied bytes.</li>
+    <li><code>Buffer.from("&lt;40+ chars of base64&gt;", "base64")</code></li>
+    <li><code>String.fromCharCode(N, N, N, N+)</code> with at least 4 numeric args</li>
+    <li><code>atob("&lt;40+ chars of base64&gt;")</code></li>
+  </ul>
+
+  <h3>04 · Credential Theft <span class="badge critical">CRITICAL</span></h3>
+  <p>Access to API keys, tokens, or credential files.</p>
+  <p><b>Smart matcher</b> — knows the package's normalized name and silently skips reads of the package's own env vars. <code>resend</code> reading <code>process.env.RESEND_API_KEY</code> doesn't fire; an unrelated package reading <code>AWS_SECRET_ACCESS_KEY</code> does. Allowlist of well-known third-party credentials includes AWS, Azure, GCP, GitHub, GitLab, npm, Heroku, Docker, Slack, Discord, Stripe, Twilio, Mailgun, Sendgrid.</p>
+  <p>File-based credential references — <code>.npmrc</code>, <code>.netrc</code>, <code>id_rsa</code>, <code>id_ed25519</code> — fire unconditionally.</p>
+
+  <h3>05 · Install Script Abuse <span class="badge critical">CRITICAL</span></h3>
+  <p>Lifecycle scripts (<code>preinstall</code> / <code>install</code> / <code>postinstall</code>) that pipe remote code into a shell.</p>
+  <p><b>Smart matcher</b> — only inspects <code>scripts.{preinstall,install,postinstall}</code> of <code>package.json</code>. Test scripts, prepublish hooks, and build scripts that happen to use <code>node -e</code> or <code>curl | sh</code> don't fire. Real-world false positive on ljharb's utility packages eliminated.</p>
+
+  <h3>06 · Crypto Mining <span class="badge critical">CRITICAL</span></h3>
+  <p>Cryptocurrency mining APIs and pool connections: CoinHive, Monero/XMR, <code>stratum+tcp://</code> URLs, CryptoNight references.</p>
+
+  <h3>07 · Wallet Drain <span class="badge critical">CRITICAL</span></h3>
+  <p>Cryptocurrency wallet access or transfer patterns: <code>web3.eth.sendTransaction</code>, <code>ethers.Wallet</code> instantiation, <code>drainTokens</code> / <code>drainWallet</code> function names.</p>
+
+  <h3>08 · Reverse Shell <span class="badge critical">CRITICAL</span></h3>
+  <p>Patterns used to open a remote shell back to an attacker: <code>/bin/bash -i</code>, <code>/dev/tcp/</code>, <code>mkfifo</code>, <code>nc -e /bin/</code>.</p>
+
+  <h3>09 · Network Exfiltration <span class="badge high">HIGH</span></h3>
+  <p>Outbound calls to known exfiltration services or hidden domains. Narrowed on purpose:</p>
+  <ul>
+    <li><code>.onion</code> URLs (Tor)</li>
+    <li>Pastebin, hastebin, requestbin, webhook.site, ngrok.io, transfer.sh, anonfiles.com, gofile.io, paste.ee, controlc.com</li>
+  </ul>
+  <p>Generic <code>fetch(...)</code>, <code>axios.X(...)</code>, and <code>require('http')</code> patterns produce too many false positives on legitimate API clients, so they're <em>not</em> flagged here.</p>
+
+  <h3>10 · Typosquatting <span class="badge high">HIGH</span></h3>
+  <p>Package name within Levenshtein distance == 1 of a popular package (lodash, express, axios, react, vue, …). Distance-2 was tried originally but produced false positives on legitimate short names like <code>fecha</code> matching <code>mocha</code>.</p>
+
+  <h3>11 · File System Access <span class="badge high">HIGH</span></h3>
+  <p>Reads of OS-level sensitive paths: <code>/etc/passwd</code>, <code>/etc/shadow</code>, <code>.aws/credentials</code>, <code>.kube/config</code>, <code>.docker/config.json</code>.</p>
+
+  <h2 data-num="§ 04">Layer 3 — known vulnerabilities (OSV)</h2>
+  <p>Beyond the static detectors, phi queries every resolved (name, version) against the <a href="https://osv.dev" style="color:var(--signal)">OSV database</a>, which aggregates GHSA, OpenSSF malicious-packages, and CVE feeds. Hits append to the same risk score using their advisory severity:</p>
+  <table>
+    <thead><tr><th>OSV severity</th><th>phi points</th></tr></thead>
+    <tbody>
+      <tr><td>CRITICAL</td><td>+35</td></tr>
+      <tr><td>HIGH</td><td>+20</td></tr>
+      <tr><td>MODERATE</td><td>+10</td></tr>
+      <tr><td>LOW / UNKNOWN</td><td>+5</td></tr>
+    </tbody>
+  </table>
+  <p>Disable with <code>--no-advisories</code> for offline use. Network failures are non-fatal — phi prints a warning and proceeds without advisory data.</p>
+
+  <h2 data-num="§ 05">Adding a new detector</h2>
+  <p>In <code>internal/analyzer/detectors.go</code>, append to the <code>detectors</code> slice:</p>
+  <div class="snippet">
+<pre><code>{
+    name:        "Your Detector",
+    description: "What it catches",
+    severity:    SeverityHigh,
+    patterns: mustCompile(
+        `your\s+regex\s+here`,
+    ),
+}</code></pre>
+    <button class="copy">copy</button>
+  </div>
+  <p>For context-aware detection (needs the package name or a parsed AST), set a <code>matcher</code> function instead of <code>patterns</code>. The scoring and UI layers pick up new detectors automatically. Tests live in <code>internal/analyzer/analyzer_test.go</code>.</p>
+
+  <div class="pager">
+    <a class="prev" href="docs.html">
+      <span class="lbl">PREV · § 02</span>
+      <span class="ti">Docs</span>
+    </a>
+    <a class="next" href="faq.html">
+      <span class="lbl">NEXT · § 04</span>
+      <span class="ti">FAQ</span>
+    </a>
+  </div>
+
+</section>
+</div>
+
+<footer>
+  <div class="wrap foot-row">
+    <div>phi · Brayne / Philtechs · MIT licensed · <a href="https://github.com/philtechs-org/phi">github.com/philtechs-org/phi</a></div>
+    <div>built in Go · scanned at install · <span style="color:var(--signal)">●</span> OSV synced</div>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.snippet button.copy').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const code = btn.parentElement.querySelector('code');
+    if (!code) return;
+    navigator.clipboard.writeText(code.textContent.trim());
+    btn.textContent = 'ok ✓'; btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1400);
+  });
+});
+</script>
+
+</body>
+</html>

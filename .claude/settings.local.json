@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Read(//tmp/**)",
+      "Bash(go version *)",
+      "PowerShell(go version *)"
+    ]
+  }
+}
