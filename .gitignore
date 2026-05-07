@@ -38,3 +38,4 @@ website/
 
 # Goreleaser local snapshot artifacts
 dist/
+.vscode/settings.json

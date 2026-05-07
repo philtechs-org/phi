@@ -250,4 +250,4 @@ MIT.
 
 ---
 
-phi · Brayne / Philtechs · v0.1.0
+phi · Philtechs · v0.1.2
