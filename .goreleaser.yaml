@@ -82,12 +82,12 @@ release:
 
     Linux / macOS:
     ```sh
-    curl -sSL https://raw.githubusercontent.com/philtechs-org/phi/main/install.sh | sh
+    curl -sSL https://phi.philtechs.org/install.sh | sh
     ```
 
     Windows (PowerShell):
     ```powershell
-    iwr -useb https://raw.githubusercontent.com/philtechs-org/phi/main/install.ps1 | iex
+    iwr -useb https://phi.philtechs.org/install.ps1 | iex
     ```
 
     Or grab a binary directly from the Assets below.

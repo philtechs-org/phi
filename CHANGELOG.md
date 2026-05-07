@@ -79,5 +79,4 @@ First public release.
   darwin-arm64 / windows-amd64 published on each tagged release.
 - Cross-platform install scripts (`install.sh`, `install.ps1`) that detect
   platform, fetch the right archive, verify sha256, and place the binary.
-- Static documentation site at https://philtechs-org.github.io/phi/ (or
-  whatever the eventual URL becomes).
+- Static documentation site at https://phi.philtechs.org.

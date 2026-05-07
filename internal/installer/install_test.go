@@ -68,7 +68,7 @@ func TestInstall_BlocksMaliciousPackage(t *testing.T) {
 	client := &registry.Client{BaseURL: server.URL, HTTP: server.Client()}
 
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 
 	err := install(client, []string{"evil-pkg"}, Options{})
 	if err == nil {
@@ -105,7 +105,7 @@ func TestInstall_SafePackageSucceeds(t *testing.T) {
 	client := &registry.Client{BaseURL: server.URL, HTTP: server.Client()}
 
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 
 	if err := install(client, []string{"clean-pkg"}, Options{}); err != nil {
 		t.Fatalf("install should succeed: %v", err)
@@ -156,7 +156,7 @@ func TestInstall_IntegrityMismatchAborts(t *testing.T) {
 	client := &registry.Client{BaseURL: server.URL, HTTP: server.Client()}
 
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 
 	err := install(client, []string{"tampered"}, Options{})
 	if err == nil {

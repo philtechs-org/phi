@@ -16,7 +16,7 @@ extracting approved packages...
   report:   phi-report.json
 ```
 
-The full documentation lives at <https://philtechs-org.github.io/phi/>.
+Full documentation: <https://phi.philtechs.org>
 
 ## Why
 
@@ -38,13 +38,13 @@ Phi is a real package manager — it does not wrap or shell out to npm:
 **Linux / macOS:**
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/philtechs-org/phi/main/install.sh | sh
+curl -sSL https://phi.philtechs.org/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/philtechs-org/phi/main/install.ps1 | iex
+iwr -useb https://phi.philtechs.org/install.ps1 | iex
 ```
 
 Both scripts detect platform + arch, download the right archive from [GitHub Releases](https://github.com/philtechs-org/phi/releases), verify sha256, and place the binary on PATH (or print where to add it).

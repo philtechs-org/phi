@@ -35,7 +35,7 @@ func TestPackageJSONSpec(t *testing.T) {
 
 func TestUpsertDependency_CreatesPackageJSON(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 
 	if err := upsertDependency("chalk", "^4.1.2", ""); err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestUpsertDependency_CreatesPackageJSON(t *testing.T) {
 
 func TestUpsertDependency_AddsToDependencies(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	writeJSON(t, "package.json", `{"name":"app","dependencies":{"existing":"^1.0.0"}}`)
 
 	if err := upsertDependency("chalk", "^4.1.2", ""); err != nil {
@@ -68,7 +68,7 @@ func TestUpsertDependency_AddsToDependencies(t *testing.T) {
 
 func TestUpsertDependency_PreservesDevDependencyLocation(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	writeJSON(t, "package.json", `{"devDependencies":{"jest":"^28.0.0"}}`)
 
 	if err := upsertDependency("jest", "^29.0.0", ""); err != nil {
@@ -85,7 +85,7 @@ func TestUpsertDependency_PreservesDevDependencyLocation(t *testing.T) {
 
 func TestUpsertDependency_OverwritesExistingSpec(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	writeJSON(t, "package.json", `{"dependencies":{"chalk":"^4.0.0"}}`)
 
 	if err := upsertDependency("chalk", "^5.0.0", ""); err != nil {
@@ -100,7 +100,7 @@ func TestUpsertDependency_OverwritesExistingSpec(t *testing.T) {
 // --save-dev moves chalk from dependencies → devDependencies.
 func TestUpsertDependency_SaveDevMoves(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	writeJSON(t, "package.json", `{"dependencies":{"chalk":"^4.0.0"}}`)
 
 	if err := upsertDependency("chalk", "^4.1.2", "devDependencies"); err != nil {
@@ -118,7 +118,7 @@ func TestUpsertDependency_SaveDevMoves(t *testing.T) {
 // --save-peer adds to peerDependencies.
 func TestUpsertDependency_SavePeerNew(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	writeJSON(t, "package.json", `{}`)
 
 	if err := upsertDependency("react", "^18.0.0", "peerDependencies"); err != nil {
@@ -155,4 +155,19 @@ func writeJSON(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// chdir is a shim for t.Chdir, which only exists from Go 1.24. Phi's go.mod
+// declares Go 1.21+ and CI tests against 1.21 / 1.22, so we restore the cwd
+// manually via t.Cleanup.
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
 }

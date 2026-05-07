@@ -1,7 +1,7 @@
 # phi installer for Windows.
 #
 # Usage:
-#   iwr -useb https://raw.githubusercontent.com/philtechs-org/phi/main/install.ps1 | iex
+#   iwr -useb https://phi.philtechs.org/install.ps1 | iex
 #   # or pin a version:
 #   $args = @('-Version','v0.1.0'); iwr -useb .../install.ps1 | iex
 
@@ -71,9 +71,11 @@ try {
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     if ($userPath -notlike "*$InstallDir*") {
         Write-Host ''
-        Write-Host "Add $InstallDir to your PATH so 'phi' works in any shell:"
-        Write-Host "  setx PATH `"$env:Path;$InstallDir`""
-        Write-Host '(or do it through Settings → System → About → Advanced system settings → Environment Variables)'
+        Write-Host "Add $InstallDir to your PATH so 'phi' works in any shell. Run this once:"
+        Write-Host ''
+        Write-Host "  [Environment]::SetEnvironmentVariable('Path', `"`$env:Path;$InstallDir`", 'User')"
+        Write-Host ''
+        Write-Host '(or open Settings -> System -> About -> Advanced system settings -> Environment Variables)'
     }
 
     & $target version

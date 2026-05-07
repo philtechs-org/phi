@@ -2,7 +2,7 @@
 # phi installer for Linux and macOS
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/philtechs-org/phi/main/install.sh | sh
+#   curl -sSL https://phi.philtechs.org/install.sh | sh
 #   # or pin a version:
 #   curl -sSL .../install.sh | sh -s -- --version v0.1.0
 
