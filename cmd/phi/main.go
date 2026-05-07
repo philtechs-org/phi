@@ -10,13 +10,9 @@ import (
 	"github.com/philtechs-org/phi/internal/ui"
 )
 
-// Build metadata. Defaults are used by `go build`; goreleaser overrides
-// these via -ldflags -X main.<name>=<value> for tagged releases.
-var (
-	version   = "0.1.0-dev"
-	commit    = "none"
-	buildDate = "unknown"
-)
+// version is set by `go build`'s default ("0.1.0-dev") or overridden by
+// goreleaser via -ldflags -X main.version=<tag> on tagged releases.
+var version = "0.1.0-dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -62,7 +58,7 @@ func main() {
 	case "cache":
 		exitOnErr(handleCache(args))
 	case "version", "-v", "--version":
-		fmt.Printf("phi %s (commit %s, built %s)\n", version, commit, buildDate)
+		fmt.Println("phi", version)
 	case "help", "-h", "--help":
 		ui.PrintHelp()
 	default:
