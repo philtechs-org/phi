@@ -1,5 +1,11 @@
 # Phi
 
+[![Downloads (total)](https://img.shields.io/github/downloads/philtechs-org/phi/total?label=downloads&color=84cc16)](https://github.com/philtechs-org/phi/releases)
+[![Latest release](https://img.shields.io/github/v/release/philtechs-org/phi?label=release&color=84cc16)](https://github.com/philtechs-org/phi/releases/latest)
+[![Latest downloads](https://img.shields.io/github/downloads/philtechs-org/phi/latest/total?label=downloads%40latest&color=84cc16)](https://github.com/philtechs-org/phi/releases/latest)
+[![License](https://img.shields.io/github/license/philtechs-org/phi?color=84cc16)](https://github.com/philtechs-org/phi/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/philtechs-org/phi/test.yml?branch=main&label=tests)](https://github.com/philtechs-org/phi/actions)
+
 **A security-first package manager for Node.js.** Phi scans every package — top-level and transitive — *before* anything is written to disk, scores it on a 0–100 risk scale, and either installs it, prompts you, or blocks it. Built in Go for speed.
 
 ```
@@ -76,6 +82,7 @@ go build -o phi ./cmd/phi
 | `phi outdated` | — | Show direct deps with newer versions available. |
 | `phi why <pkg>` | — | Print the dep chain that pulled a package in. |
 | `phi cache stat` / `clean` | — | Inspect or prune the on-disk tarball cache. |
+| `phi self-update [--check]` | — | Update phi itself to the latest GitHub release (or check if one's available). |
 | `phi version` / `phi help` | — | Self-explanatory. |
 
 `phi do` is phi's distinctive verb (npm/yarn/pnpm all use `run`). It reads naturally — "do the dev script", "do migrate:js" — and has the same lifecycle hook semantics as npm: `predev` and `postdev` run automatically around `dev`. Extra args pass through (`phi do dev --port 3000` → `<dev script> --port 3000`).

@@ -115,6 +115,7 @@ Commands:
   phi why <pkg>                   Show why a package is in the dependency tree
   phi cache stat                  Show on-disk tarball cache size
   phi cache clean [--older-than]  Prune cache entries (default: older than 30d)
+  phi self-update [--check]       Update phi itself to the latest GitHub release
   phi version                     Show version
   phi help                        Show this help
 

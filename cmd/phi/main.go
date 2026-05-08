@@ -12,9 +12,13 @@ import (
 
 // version is set by `go build`'s default ("0.1.0-dev") or overridden by
 // goreleaser via -ldflags -X main.version=<tag> on tagged releases.
-var version = "0.2.0-dev"
+var version = "0.2.1-dev"
 
 func main() {
+	// Sweep up the .old binary left by a previous Windows self-update.
+	// No-op on Unix and on first runs.
+	installer.CleanupSelfUpdateLeftovers()
+
 	if len(os.Args) < 2 {
 		ui.PrintHelp()
 		return
@@ -60,6 +64,8 @@ func main() {
 		exitOnErr(installer.Outdated())
 	case "cache":
 		exitOnErr(handleCache(args))
+	case "self-update", "selfupdate":
+		exitOnErr(installer.SelfUpdate(version, parseSelfUpdateFlags(args)))
 	case "version", "-v", "--version":
 		fmt.Println("phi", version)
 	case "help", "-h", "--help":
@@ -143,6 +149,25 @@ func parseCreateArgs(args []string) (framework, name string, extra []string) {
 		extra = append(extra, rest...)
 	}
 	return
+}
+
+func parseSelfUpdateFlags(args []string) installer.SelfUpdateOptions {
+	var opts installer.SelfUpdateOptions
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--check":
+			opts.CheckOnly = true
+		case a == "--yes" || a == "-y":
+			opts.Yes = true
+		case a == "--version" && i+1 < len(args):
+			opts.Version = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--version="):
+			opts.Version = strings.TrimPrefix(a, "--version=")
+		}
+	}
+	return opts
 }
 
 func parseInitFlags(args []string) installer.InitOptions {

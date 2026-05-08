@@ -5,6 +5,27 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-05-08
+
+### Added
+
+- `phi self-update [--check] [--version v0.X.Y] [--yes]` — replace the
+  running phi binary with the latest GitHub release (or a pinned tag).
+  The new binary's sha256 is verified against `checksums.txt` from the
+  release before installation. On Windows the running binary is renamed
+  to `<phi.exe>.old` to bypass the file-lock; the leftover is cleaned
+  up automatically on the next phi run. `--check` reports whether an
+  update is available without installing it; `--yes` skips the
+  confirmation prompt for non-interactive use.
+
+  Distinct from `phi update`, which re-resolves your project's
+  dependencies. `phi self-update` updates phi itself.
+
+  Manual fallback (no command needed) still works: re-run the install
+  one-liner — `curl -sSL https://phi.philtechs.org/install.sh | sh` on
+  Linux/macOS, `iwr -useb https://phi.philtechs.org/install.ps1 | iex`
+  on Windows. Both always pull the latest release.
+
 ## [0.2.0] — 2026-05-08
 
 ### Added
