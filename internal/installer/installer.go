@@ -170,7 +170,7 @@ func install(client *registry.Client, args []string, opts Options) error {
 
 	if !opts.JSON && !opts.Quiet {
 		for path, r := range scans {
-			if r.Verdict != scorer.VerdictSafe || len(advs[path]) > 0 {
+			if r.Verdict != scorer.VerdictSafe || len(advs[path]) > 0 || len(r.Notices) > 0 {
 				ui.PrintReportCard(r, advs[path])
 			}
 		}
@@ -343,7 +343,7 @@ func audit(client *registry.Client, opts Options) error {
 
 	if !opts.JSON {
 		for path, r := range scans {
-			if r.Verdict != scorer.VerdictSafe || len(advs[path]) > 0 {
+			if r.Verdict != scorer.VerdictSafe || len(advs[path]) > 0 || len(r.Notices) > 0 {
 				ui.PrintReportCard(r, advs[path])
 			}
 		}
@@ -408,8 +408,9 @@ func emitJSONReport() {
 func scanWithProgress(client *registry.Client, tree *resolver.Tree, jsonMode bool) (map[string]*analyzer.AnalysisReport, map[string][]byte, error) {
 	tick := func() {}
 	if !jsonMode {
-		bar := ui.NewProgressBar(len(tree.All))
-		tick = func() { _ = bar.Add(1) }
+		p := ui.NewProgress(len(tree.All))
+		tick = p.Tick
+		defer p.Done()
 	}
 	return scanTree(client, tree, tick)
 }
@@ -526,6 +527,18 @@ func scanTree(
 			defer wg.Done()
 			defer func() { <-sem }()
 			defer onTick()
+			// Convert any panic into a clean error. Without this, a
+			// panic deep in a goroutine (corrupt tarball blowing up
+			// gzip/tar, a goja crash on edge-case JS, an OOB in any
+			// detector) tears down the whole phi process — taking the
+			// other 80 packages currently being scanned with it. Now
+			// the panic is local to that one package: the user gets a
+			// readable error and the rest of the tree finishes.
+			defer func() {
+				if r := recover(); r != nil {
+					setErr(fmt.Errorf("panic scanning %s@%s: %v", it.pkg.Name, it.pkg.Version, r))
+				}
+			}()
 
 			data, hit, _ := cache.Load(it.pkg.Integrity)
 			if !hit {

@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/philtechs-org/phi/internal/registry"
@@ -92,17 +93,31 @@ func (pc *packumentCache) Prefetch(names []string) {
 
 	for _, n := range toFetch {
 		go func(name string) {
-			pc.sem <- struct{}{}
-			p, err := pc.client.FetchPackument(name)
-			<-pc.sem
+			// Convert any panic into a stored error so a single bad
+			// packument response doesn't tear down the whole resolve.
+			// Mirrors the recover() pattern in installer/scanTree —
+			// every goroutine that can hit untrusted input (HTTP body,
+			// JSON parse, regex on payload) needs this.
+			var (
+				p        *registry.Packument
+				fetchErr error
+			)
+			defer func() {
+				if r := recover(); r != nil {
+					fetchErr = fmt.Errorf("panic fetching packument %s: %v", name, r)
+				}
+				pc.mu.Lock()
+				pc.fetched[name] = p
+				pc.errs[name] = fetchErr
+				ch := pc.fetching[name]
+				delete(pc.fetching, name)
+				pc.mu.Unlock()
+				close(ch)
+			}()
 
-			pc.mu.Lock()
-			pc.fetched[name] = p
-			pc.errs[name] = err
-			ch := pc.fetching[name]
-			delete(pc.fetching, name)
-			pc.mu.Unlock()
-			close(ch)
+			pc.sem <- struct{}{}
+			p, fetchErr = pc.client.FetchPackument(name)
+			<-pc.sem
 		}(n)
 	}
 }

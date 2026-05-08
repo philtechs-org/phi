@@ -2,7 +2,6 @@ package installer
 
 import (
 	"encoding/json"
-	"os"
 	"sort"
 	"time"
 
@@ -27,6 +26,11 @@ type advisoryJSON struct {
 	Reference string   `json:"reference"`
 }
 
+type noticeJSON struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+}
+
 type packageJSON struct {
 	Name         string          `json:"name"`
 	Version      string          `json:"version"`
@@ -35,6 +39,7 @@ type packageJSON struct {
 	Verdict      string          `json:"verdict"`
 	Detections   []detectionJSON `json:"detections"`
 	Advisories   []advisoryJSON  `json:"advisories,omitempty"`
+	Notices      []noticeJSON    `json:"notices,omitempty"`
 }
 
 type summaryJSON struct {
@@ -91,6 +96,13 @@ func WriteReport(path string, scans map[string]*analyzer.AnalysisReport, advs ma
 				})
 			}
 		}
+		var notList []noticeJSON
+		if len(r.Notices) > 0 {
+			notList = make([]noticeJSON, 0, len(r.Notices))
+			for _, n := range r.Notices {
+				notList = append(notList, noticeJSON{Kind: n.Kind, Message: n.Message})
+			}
+		}
 		pkgs = append(pkgs, packageJSON{
 			Name:         r.PackageName,
 			Version:      r.PackageVersion,
@@ -99,6 +111,7 @@ func WriteReport(path string, scans map[string]*analyzer.AnalysisReport, advs ma
 			Verdict:      r.Verdict,
 			Detections:   dets,
 			Advisories:   advList,
+			Notices:      notList,
 		})
 	}
 	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].Name < pkgs[j].Name })
@@ -113,5 +126,5 @@ func WriteReport(path string, scans map[string]*analyzer.AnalysisReport, advs ma
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(body, '\n'), 0o644)
+	return writeFileAtomic(path, append(body, '\n'), 0o644)
 }

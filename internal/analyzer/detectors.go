@@ -126,6 +126,37 @@ var detectors = []detector{
 			`nc\s+-e\s+/bin/`,
 		),
 	},
+	{
+		// Combined-flow detector. Fires when the same file BOTH reads a
+		// third-party credential (or sensitive file like .npmrc / id_rsa)
+		// AND makes an outbound HTTP request, EXCEPT when every URL in
+		// the file targets the credential's canonical service. The
+		// allowlist suppresses legitimate API-client cases (octokit reads
+		// GITHUB_TOKEN, fetches api.github.com — fine; same token + a
+		// post to evil.example.com — not fine).
+		name:        "Credential Exfil Flow",
+		description: "Sensitive credential read + outbound HTTP in the same file, to a non-canonical host",
+		severity:    SeverityCritical,
+		matcher:     detectCredentialExfilFlow,
+	},
+	{
+		// Conservative regex set. None of these symbols belong in
+		// legitimate npm packages. Word boundaries prevent stray matches
+		// inside larger identifiers; package.json scripts are skipped by
+		// shouldScan via JSON parsing semantics.
+		name:        "Linux System Tampering",
+		description: "PAM, eBPF, kernel-module, or LD_PRELOAD symbols — abnormal for npm packages",
+		severity:    SeverityCritical,
+		patterns: mustCompile(
+			`\b(?:pam_authenticate|pam_open_session|pam_sm_authenticate|pam_sm_setcred|pam_start|pam_end)\b`,
+			`(?:^|[^A-Za-z0-9_])libpam(?:\.so|[^A-Za-z0-9_])`,
+			`\bBPF_(?:PROG_LOAD|MAP_CREATE|OBJ_PIN|OBJ_GET)\b`,
+			`\b(?:bpf_load_program|bpf_obj_pin|bpf_prog_attach|perf_event_open)\b`,
+			`\b(?:init_module|finit_module|delete_module|create_module)\s*\(`,
+			`\bLD_PRELOAD\b`,
+			`/etc/ld\.so\.preload\b`,
+		),
+	},
 }
 
 // AST-validated detectors for code-execution patterns.
@@ -371,6 +402,146 @@ var thirdPartyCreds = map[string]bool{
 	"STRIPE_SECRET_KEY":              true,
 	"MAILGUN_API_KEY":                true,
 	"SENDGRID_API_KEY":               true,
+}
+
+// canonicalHosts maps third-party credential env-var names to the hostnames
+// where it's legitimate to send that credential. A package that reads
+// GITHUB_TOKEN and POSTs to api.github.com is fine (octokit's whole job);
+// the same package POSTing to evil.example.com is not. Subdomain matching
+// is handled by hostMatchesAny ("api.github.com" satisfies "github.com").
+//
+// Keep entries here aligned with thirdPartyCreds — every credential name
+// in that map should ideally have a canonical-host entry, otherwise a
+// legitimate API client of the matching service is at risk of false
+// positives. Entries left out are still flagged by the basic Credential
+// Theft detector; the combined-flow detector simply won't fire on them.
+var canonicalHosts = map[string][]string{
+	"AWS_ACCESS_KEY_ID":              {"amazonaws.com", "aws.com"},
+	"AWS_SECRET_ACCESS_KEY":          {"amazonaws.com", "aws.com"},
+	"AWS_SECRET_KEY":                 {"amazonaws.com", "aws.com"},
+	"AWS_SESSION_TOKEN":              {"amazonaws.com", "aws.com"},
+	"AZURE_TOKEN":                    {"azure.com", "microsoft.com", "microsoftonline.com"},
+	"AZURE_CLIENT_SECRET":            {"azure.com", "microsoft.com", "microsoftonline.com"},
+	"GCP_KEY":                        {"googleapis.com", "google.com"},
+	"GOOGLE_APPLICATION_CREDENTIALS": {"googleapis.com", "google.com"},
+	"GITHUB_TOKEN":                   {"github.com", "githubusercontent.com"},
+	"GH_TOKEN":                       {"github.com", "githubusercontent.com"},
+	"GITHUB_PAT":                     {"github.com", "githubusercontent.com"},
+	"GITLAB_TOKEN":                   {"gitlab.com"},
+	"NPM_TOKEN":                      {"npmjs.org", "npmjs.com"},
+	"NPM_AUTH_TOKEN":                 {"npmjs.org", "npmjs.com"},
+	"HEROKU_API_KEY":                 {"heroku.com", "herokuapp.com"},
+	"DOCKER_PASSWORD":                {"docker.com", "docker.io"},
+	"CIRCLE_TOKEN":                   {"circleci.com"},
+	"DISCORD_TOKEN":                  {"discord.com", "discordapp.com"},
+	"DISCORD_BOT_TOKEN":              {"discord.com", "discordapp.com"},
+	"SLACK_TOKEN":                    {"slack.com"},
+	"SLACK_BOT_TOKEN":                {"slack.com"},
+	"PYPI_TOKEN":                     {"pypi.org"},
+	"TWILIO_AUTH_TOKEN":              {"twilio.com"},
+	"STRIPE_SECRET_KEY":              {"stripe.com"},
+	"MAILGUN_API_KEY":                {"mailgun.org", "mailgun.com", "mailgun.net"},
+	"SENDGRID_API_KEY":               {"sendgrid.com", "sendgrid.net"},
+}
+
+var (
+	// urlHostRe extracts the host portion of any http(s) URL appearing in
+	// source. Used to check whether a file's outbound calls all target a
+	// credential's canonical service.
+	urlHostRe = regexp.MustCompile(`https?://([A-Za-z0-9.\-]+)`)
+	// outboundCallRe matches the surface area of "this file performs an
+	// outbound HTTP request" — fetch, axios, http.request, XMLHttpRequest,
+	// .post / .put / .send chains. Designed to err on the side of false
+	// positives at THIS layer; the canonical-host check rejects benign
+	// cases before the detector fires.
+	outboundCallRe = regexp.MustCompile(
+		`\bfetch\s*\(|\baxios(?:\.[a-z]+)?\s*\(|\bgot(?:\.[a-z]+)?\s*\(|` +
+			`\bhttps?\.(?:request|get|post|put|delete|patch)\s*\(|` +
+			`\bnew\s+XMLHttpRequest\b|\bnavigator\.sendBeacon\s*\(|` +
+			`\.(?:post|put|patch|send|sendForm)\s*\(`)
+)
+
+func detectCredentialExfilFlow(content string, ctx detectionContext) (string, bool) {
+	// Phase 1: locate the credential signal in this file. Prefer
+	// file-based reads (.npmrc / id_rsa / .aws/credentials) — those are
+	// unambiguous, no canonical-host allowlist applies. Otherwise look
+	// for an env-var read of a known third-party credential that isn't
+	// the package's own config.
+	pkgUpper := normalizePkgName(ctx.packageName)
+	var (
+		credName     string
+		credCanon    []string
+		fileBasedHit bool
+	)
+	if loc := credFileRe.FindStringIndex(content); loc != nil {
+		credName = content[loc[0]:loc[1]]
+		fileBasedHit = true
+	} else {
+		for _, m := range envVarRe.FindAllStringSubmatch(content, -1) {
+			envVar := m[1]
+			if envVar == "" {
+				envVar = m[2]
+			}
+			if isOwnConfig(envVar, pkgUpper) {
+				continue
+			}
+			if hosts, ok := canonicalHosts[envVar]; ok {
+				credName = envVar
+				credCanon = hosts
+				break
+			}
+		}
+	}
+	if credName == "" {
+		return "", false
+	}
+
+	// Phase 2: require an outbound call in the same file.
+	if !outboundCallRe.MatchString(content) {
+		return "", false
+	}
+
+	// Phase 3: if the credential has known canonical hosts and EVERY
+	// http(s) URL in the file points to one of them, treat as legit
+	// (octokit + GITHUB_TOKEN + api.github.com case). File-based hits
+	// (path of an SSH key, .npmrc) skip this check — there's no
+	// "legitimate" host for sending someone's id_rsa anywhere.
+	if !fileBasedHit && len(credCanon) > 0 {
+		hosts := extractURLHosts(content)
+		if len(hosts) > 0 {
+			allCanonical := true
+			for _, h := range hosts {
+				if !hostMatchesAny(h, credCanon) {
+					allCanonical = false
+					break
+				}
+			}
+			if allCanonical {
+				return "", false
+			}
+		}
+	}
+
+	return credName + " + outbound network call", true
+}
+
+func extractURLHosts(content string) []string {
+	out := make([]string, 0, 4)
+	for _, m := range urlHostRe.FindAllStringSubmatch(content, -1) {
+		out = append(out, strings.ToLower(m[1]))
+	}
+	return out
+}
+
+func hostMatchesAny(host string, canonical []string) bool {
+	host = strings.ToLower(host)
+	for _, c := range canonical {
+		c = strings.ToLower(c)
+		if host == c || strings.HasSuffix(host, "."+c) {
+			return true
+		}
+	}
+	return false
 }
 
 func detectCredentialTheft(content string, ctx detectionContext) (string, bool) {

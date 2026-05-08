@@ -13,6 +13,54 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = 'philtechs-org/phi'
 
+# Show-DefenderBlockHelp prints a clear remediation message when Windows
+# Defender's heuristic flags phi.exe — a common false positive on every
+# unsigned Go binary (gh, cosign, goreleaser, etc.) because Defender's
+# behavioral heuristics match patterns that real Go-based malware also
+# uses. The install script verifies sha256 against checksums.txt before
+# this point, so if execution reaches here, the bytes ARE the published
+# release.
+function Show-DefenderBlockHelp {
+    param(
+        [string]$InstallDir,
+        [string]$Stage = 'execute',  # 'copy' (mid-install) or 'execute' (post-install verify)
+        [string]$Target
+    )
+    Write-Host ''
+    Write-Host '----------------------------------------------------------------'
+    Write-Host 'WINDOWS DEFENDER FALSE POSITIVE'
+    Write-Host '----------------------------------------------------------------'
+    if ($Stage -eq 'copy') {
+        Write-Host "Defender quarantined phi.exe before it could be installed."
+    } else {
+        Write-Host "Defender allowed install but blocks execution of phi.exe."
+        Write-Host "The binary is on disk at: $Target"
+    }
+    Write-Host ''
+    Write-Host 'This is a known false positive on unsigned Go binaries (same'
+    Write-Host 'issue affects gh, cosign, and most Go-built CLIs). Phi is open'
+    Write-Host 'source and the install script verified the binary sha256 matches'
+    Write-Host 'checksums.txt — the bytes ARE the published release.'
+    Write-Host ''
+    Write-Host 'Unblock with one of these (run PowerShell as Administrator):'
+    Write-Host ''
+    Write-Host "  # Recommended: exempt the install dir"
+    Write-Host "  Add-MpPreference -ExclusionPath `"$InstallDir`""
+    if ($Stage -eq 'execute') {
+        Write-Host ''
+        Write-Host "  # OR one-shot unblock the binary"
+        Write-Host "  Unblock-File `"$Target`""
+    } else {
+        Write-Host ''
+        Write-Host "  # Then re-run the installer:"
+        Write-Host "  iwr -useb https://phi.philtechs.org/install.ps1 | iex"
+    }
+    Write-Host ''
+    Write-Host 'More info + how phi is reporting this to Microsoft:'
+    Write-Host '  https://phi.philtechs.org/faq.html#windows-defender'
+    Write-Host '----------------------------------------------------------------'
+}
+
 # Detect arch
 switch ($env:PROCESSOR_ARCHITECTURE) {
     'AMD64' { $arch = 'x86_64' }
@@ -62,7 +110,19 @@ try {
     if (-not (Test-Path $InstallDir)) {
         New-Item -ItemType Directory -Path $InstallDir | Out-Null
     }
-    Copy-Item -Path (Join-Path $tmp 'phi.exe') -Destination (Join-Path $InstallDir 'phi.exe') -Force
+
+    # Copy can fail if Defender real-time scanning quarantines the binary
+    # mid-write. Detect that explicitly so the user gets a useful message
+    # instead of a generic "Access denied".
+    try {
+        Copy-Item -Path (Join-Path $tmp 'phi.exe') -Destination (Join-Path $InstallDir 'phi.exe') -Force
+    } catch {
+        if ($_.Exception.Message -match 'virus|potentially unwanted') {
+            Show-DefenderBlockHelp -InstallDir $InstallDir -Stage 'copy'
+            exit 1
+        }
+        throw
+    }
 
     $target = Join-Path $InstallDir 'phi.exe'
     Write-Host "phi-install: installed phi $Version at $target"
@@ -78,7 +138,22 @@ try {
         Write-Host '(or open Settings -> System -> About -> Advanced system settings -> Environment Variables)'
     }
 
-    & $target version
+    # Final sanity check — invokes phi to confirm the binary works. This
+    # is also the most common point at which Windows Defender's heuristic
+    # blocks unsigned Go binaries (common across `gh`, `cosign`, etc., not
+    # phi-specific). The binary's sha256 was already verified above; it
+    # IS the real release. Detect, explain, exit clean.
+    try {
+        & $target version
+    } catch {
+        if ($_.Exception.Message -match 'virus|potentially unwanted') {
+            Show-DefenderBlockHelp -InstallDir $InstallDir -Stage 'execute' -Target $target
+            # Don't fail the install — the file is on disk, just blocked
+            # from running. The user can fix this with one Defender command.
+            exit 0
+        }
+        throw
+    }
 }
 finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

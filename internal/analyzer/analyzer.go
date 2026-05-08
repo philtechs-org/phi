@@ -52,6 +52,8 @@ func Analyze(packageName, packageVersion string, tarball io.Reader) (*AnalysisRe
 		report.Detections = append(report.Detections, d)
 	}
 
+	report.Notices = append(report.Notices, noticesFor(packageName)...)
+
 	return report, nil
 }
 

@@ -12,7 +12,7 @@ import (
 
 // version is set by `go build`'s default ("0.1.0-dev") or overridden by
 // goreleaser via -ldflags -X main.version=<tag> on tagged releases.
-var version = "0.2.1-dev"
+var version = "0.2.4-dev"
 
 func main() {
 	// Sweep up the .old binary left by a previous Windows self-update.
@@ -36,6 +36,10 @@ func main() {
 		_, rest := parseFlags(args)
 		exitOnErr(installer.Remove(rest))
 	case "audit":
+		if len(args) > 0 && args[0] == "fix" {
+			exitOnErr(installer.AuditFix(parseAuditFixFlags(args[1:])))
+			return
+		}
 		opts, _ := parseFlags(args)
 		exitOnErr(installer.AuditWith(opts))
 	case "init":
@@ -149,6 +153,20 @@ func parseCreateArgs(args []string) (framework, name string, extra []string) {
 		extra = append(extra, rest...)
 	}
 	return
+}
+
+func parseAuditFixFlags(args []string) installer.FixOptions {
+	var opts installer.FixOptions
+	for _, a := range args {
+		switch a {
+		case "--apply":
+			opts.Apply = true
+		case "--force", "-f":
+			opts.Force = true
+			opts.Apply = true
+		}
+	}
+	return opts
 }
 
 func parseSelfUpdateFlags(args []string) installer.SelfUpdateOptions {

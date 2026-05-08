@@ -3,13 +3,15 @@ package ui
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/philtechs-org/phi/internal/advisory"
 	"github.com/philtechs-org/phi/internal/analyzer"
-	"github.com/schollz/progressbar/v3"
 )
 
 func PrintBanner() {
@@ -19,12 +21,90 @@ func PrintBanner() {
 	fmt.Println()
 }
 
-func NewProgressBar(n int) *progressbar.ProgressBar {
-	return progressbar.NewOptions(n,
-		progressbar.OptionSetDescription("scanning"),
-		progressbar.OptionShowCount(),
-		progressbar.OptionClearOnFinish(),
-	)
+// Progress is phi's in-place scan indicator. Replaces schollz/progressbar
+// because that library wasn't emitting ANSI clear-line codes on every
+// platform we ship to, leaving residual characters when the bar's
+// rendered width changed between updates ("loader duplicates everywhere
+// and not uniformly"). The simpler approach below uses a fixed-width
+// formatted line + carriage return + space-pad to a known width, which
+// renders uniformly on cmd.exe, PowerShell, Windows Terminal, git-bash,
+// macOS Terminal, iTerm, and Linux ttys without depending on ANSI
+// support.
+type Progress struct {
+	total    int
+	count    int
+	width    int
+	throttle time.Duration
+	lastDraw time.Time
+	mu       sync.Mutex
+	out      io.Writer
+}
+
+const progressBarWidth = 24 // visual bar segment
+
+func NewProgress(total int) *Progress {
+	return &Progress{
+		total:    total,
+		width:    72,
+		throttle: 80 * time.Millisecond,
+		out:      os.Stderr,
+	}
+}
+
+// Tick increments the counter and redraws — but only if enough time has
+// passed since the last draw, or if this is the final tick. Throttling
+// keeps the output from flickering when many goroutines complete in
+// quick succession.
+func (p *Progress) Tick() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p == nil || p.total <= 0 {
+		return
+	}
+	p.count++
+	now := time.Now()
+	final := p.count >= p.total
+	if !final && now.Sub(p.lastDraw) < p.throttle {
+		return
+	}
+	p.lastDraw = now
+	p.draw()
+}
+
+// draw renders the current progress to the output stream. Caller must
+// hold p.mu.
+func (p *Progress) draw() {
+	pct := p.count * 100 / p.total
+	if pct > 100 {
+		pct = 100
+	}
+	filled := pct * progressBarWidth / 100
+	bar := strings.Repeat("█", filled) + strings.Repeat(" ", progressBarWidth-filled)
+	line := fmt.Sprintf("  scanning [%s] %3d%%  (%d/%d)", bar, pct, p.count, p.total)
+	// Pad to the fixed width so any prior longer text is fully overwritten,
+	// then carriage return so the next draw rewrites this one.
+	if len(line) < p.width {
+		line += strings.Repeat(" ", p.width-len(line))
+	}
+	fmt.Fprintf(p.out, "\r%s", line)
+}
+
+// Done finalizes the indicator: draws the 100% state and then clears the
+// line entirely so subsequent prints land at column 0 with no leftover
+// characters from the bar.
+func (p *Progress) Done() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p == nil || p.total <= 0 {
+		return
+	}
+	if p.count < p.total {
+		p.count = p.total
+	}
+	p.draw()
+	// Wipe the line: \r + spaces + \r. The trailing \r leaves the cursor
+	// at column 0 with the line cleared.
+	fmt.Fprintf(p.out, "\r%s\r", strings.Repeat(" ", p.width))
 }
 
 func PrintReportCard(r *analyzer.AnalysisReport, advisories []*advisory.Advisory) {
@@ -51,6 +131,10 @@ func PrintReportCard(r *analyzer.AnalysisReport, advisories []*advisory.Advisory
 		}
 		fmt.Printf("  - [%s] advisory %s — %s\n",
 			sev, a.ID, truncate(a.Summary, 70))
+	}
+	cyan := color.New(color.FgCyan).SprintFunc()
+	for _, n := range r.Notices {
+		fmt.Printf("  %s %s — %s\n", cyan("note"), n.Kind, truncate(n.Message, 80))
 	}
 }
 
@@ -108,6 +192,7 @@ Commands:
   phi update (u) [pkg...]         Re-resolve and install fresh, ignoring phi.lock
   phi remove (rm) <pkg...>        Drop packages from package.json, phi.lock, and node_modules
   phi audit                       Scan all dependencies without installing
+  phi audit fix [--apply|--force] Propose fixes for fixable issues; --apply rewrites package.json
   phi do (d) <script> [args...]   Run a script from package.json (with node_modules/.bin on PATH)
   phi exec (x) <bin> [args...]    Run a binary from node_modules/.bin
   phi dev | build | start | ...   Direct shortcuts: same as "phi do <name>"

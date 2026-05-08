@@ -38,12 +38,19 @@ const (
 )
 
 // Advisory describes one vulnerability against one package version.
+//
+// Fixed is the minimum semver where this advisory's "fixed" event lands
+// (parsed from affected[].ranges[].events[].fixed in the OSV detail
+// response). Empty string when OSV doesn't carry a fix version (some
+// CVEs are advisory-only; some have ranges instead of fixed events).
+// Used by `phi audit fix` to propose the safe upgrade target.
 type Advisory struct {
 	ID        string   `json:"id"`
 	Summary   string   `json:"summary"`
 	Severity  Severity `json:"severity"`
 	Aliases   []string `json:"aliases,omitempty"`
 	Reference string   `json:"reference"`
+	Fixed     string   `json:"fixed,omitempty"`
 }
 
 // Pkg identifies a package + version we want to query.
@@ -202,8 +209,24 @@ func (c *Client) detailFor(id string) (*Advisory, error) {
 		DatabaseSpecific struct {
 			Severity string `json:"severity"`
 		} `json:"database_specific"`
-		// OSV also has `severity[]` with CVSS scores, but we use
-		// database_specific.severity which carries the GHSA-style label.
+		// affected[] tells us which ecosystems / versions are vulnerable
+		// and (importantly for `phi audit fix`) the version where the
+		// vulnerability is fixed. The same advisory often spans multiple
+		// ecosystems (npm + Packagist for shared crypto libs); we only
+		// care about npm here.
+		Affected []struct {
+			Package struct {
+				Name      string `json:"name"`
+				Ecosystem string `json:"ecosystem"`
+			} `json:"package"`
+			Ranges []struct {
+				Type   string `json:"type"`
+				Events []struct {
+					Introduced string `json:"introduced,omitempty"`
+					Fixed      string `json:"fixed,omitempty"`
+				} `json:"events"`
+			} `json:"ranges"`
+		} `json:"affected"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("vuln %s parse: %w", id, err)
@@ -214,12 +237,48 @@ func (c *Client) detailFor(id string) (*Advisory, error) {
 		Severity:  normalizeSeverity(raw.DatabaseSpecific.Severity),
 		Aliases:   raw.Aliases,
 		Reference: "https://osv.dev/vulnerability/" + raw.ID,
+		Fixed:     extractFixedVersion(raw.Affected),
 	}
 
 	c.mu.Lock()
 	c.detailCache[id] = adv
 	c.mu.Unlock()
 	return adv, nil
+}
+
+// extractFixedVersion scans the OSV affected[] entries for npm packages
+// and returns a single representative "fixed in" version. We pick the
+// FIRST fixed event we encounter on an npm-ecosystem range — OSV may
+// list multiple ranges for legacy-major-line backports (e.g. "fixed in
+// 3.x at 3.10.5 and in 4.x at 4.2.0"), but `phi audit fix` proposes
+// "the simplest safe upgrade", so the first hit is good enough. Returns
+// empty string when no fix version is documented.
+func extractFixedVersion(affected []struct {
+	Package struct {
+		Name      string `json:"name"`
+		Ecosystem string `json:"ecosystem"`
+	} `json:"package"`
+	Ranges []struct {
+		Type   string `json:"type"`
+		Events []struct {
+			Introduced string `json:"introduced,omitempty"`
+			Fixed      string `json:"fixed,omitempty"`
+		} `json:"events"`
+	} `json:"ranges"`
+}) string {
+	for _, a := range affected {
+		if !strings.EqualFold(a.Package.Ecosystem, "npm") {
+			continue
+		}
+		for _, r := range a.Ranges {
+			for _, e := range r.Events {
+				if e.Fixed != "" {
+					return e.Fixed
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func normalizeSeverity(s string) Severity {

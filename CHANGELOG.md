@@ -5,6 +5,141 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] — 2026-05-09
+
+### Fixed
+
+- **Atomic writes for user-mutable files.** `package.json` (after
+  `phi install <pkg>`, `phi remove`, `phi audit fix`), `phi.lock`, and
+  `phi-report.json` are now written via a write-temp-then-rename
+  pattern. Either the new content fully replaces the old or the old is
+  preserved — no half-written intermediates if the process is killed
+  or the machine loses power mid-write. Same pattern Postgres / git use
+  for their on-disk state. Previously a Ctrl-C between truncate and
+  write could leave the user's `package.json` empty.
+
+- **Panic recovery in scan + prefetch goroutines.** A panic anywhere
+  in the analyzer (corrupt tarball blowing up gzip/tar, goja crashing
+  on a particular JS edge case, an OOB in any detector) used to tear
+  down the whole phi process — taking the other 80 packages mid-scan
+  with it. Each scan goroutine now has a `defer recover()` that
+  converts the panic into a clean per-package error; the rest of the
+  tree still finishes. Same fix applied to `resolver/packument_cache`'s
+  background prefetch goroutines.
+
+- **`phi self-update` preflight permission check.** Verifies the
+  install directory is writable BEFORE downloading the new binary.
+  Catches the "phi installed system-wide, user isn't root" case with a
+  platform-aware suggestion (`sudo phi self-update --yes` on Unix,
+  "run from elevated PowerShell" on Windows) instead of the previous
+  failure mid-install after several MB of bandwidth.
+
+- **Windows Defender false-positive guidance** — `install.ps1` now
+  detects the `Operation did not complete successfully because the file
+  contains a virus or potentially unwanted software` error (common
+  Defender heuristic on every unsigned Go CLI — same issue affects `gh`,
+  `cosign`, `goreleaser`) and prints a clear remediation message with
+  the exact `Add-MpPreference` / `Unblock-File` commands the user needs.
+  Distinguishes copy-stage blocks (binary never reaches disk; install
+  fails) from execute-stage blocks (binary installed fine, just blocked
+  from running; install exits clean and the user just unblocks).
+
+  The script verifies sha256 against `checksums.txt` *before* this
+  point — if execution reaches the Defender block, the bytes are
+  exactly the published release. Defender is wrong about behavior, not
+  lying about a swap.
+
+  Companion: new FAQ entry at
+  https://phi.philtechs.org/faq.html#windows-defender, install page
+  callout, and `RELEASE.md` per-release submission checklist for the
+  Microsoft Defender FP review portal.
+
+## [0.2.3] — 2026-05-08
+
+### Added
+
+- **`phi audit fix [--apply | --force]`** — proposes (and optionally
+  applies) actionable fixes for direct dependencies. Three sources of
+  fixes, in order of confidence:
+
+  1. **Typosquats** → swap to the popular package name. Always safe.
+  2. **Advisory bumps** → upgrade to the OSV-documented "fixed in"
+     version. Same-major bumps are safe; cross-major are flagged as
+     breaking and require `--force`.
+  3. **Deprecated packages** → swap to the curated successor (vm2 →
+     isolated-vm, request → undici, node-uuid → uuid, etc.). Always
+     breaking — public API differs — so `--force` is required.
+
+  Default is preview-only (zero filesystem changes). `--apply` writes
+  the safe fixes to `package.json`. `--force` writes everything,
+  including breaking changes. The user runs `phi install` afterwards
+  to materialize the new versions.
+
+  Different from `npm audit fix` in three ways: phi handles
+  typosquats and deprecations (not just CVE bumps); phi shows the
+  proposal before applying; phi explicitly distinguishes safe from
+  breaking changes.
+
+### Changed
+
+- **Scan progress indicator rewritten.** Replaced the schollz progressbar
+  dependency with a small in-house implementation. The previous bar
+  wasn't emitting ANSI clear-line codes on every shell we ship to,
+  which left residual characters when the bar's width changed between
+  updates ("loader duplicates everywhere"). The new indicator uses
+  fixed-width formatted lines + carriage return + space-pad — uniform
+  rendering on cmd.exe, PowerShell, Windows Terminal, git-bash, macOS
+  Terminal, iTerm, and Linux ttys. Throttled to ~80ms between draws,
+  so 80 ticks become 5–10 visible updates instead of a flicker stream.
+  `github.com/schollz/progressbar/v3` is gone from `go.mod`.
+
+- **OSV advisory parsing extended** — `Advisory.Fixed` is now populated
+  from `affected[].ranges[].events[].fixed` in the OSV detail response.
+  Used by `phi audit fix` to compute the safe upgrade target. Existing
+  consumers (report card, JSON report) are unchanged.
+
+## [0.2.2] — 2026-05-08
+
+### Added
+
+- **Detector: Credential Exfil Flow** (CRITICAL). Fires when the same
+  source file BOTH reads a third-party credential (env var name in the
+  known-token list, or a sensitive file path like `id_rsa` /
+  `.aws/credentials` / `.npmrc`) AND makes an outbound HTTP call. Smart
+  matcher with a token-to-canonical-host allowlist: a package reading
+  `GITHUB_TOKEN` and posting to `api.github.com` is silent (octokit and
+  similar legitimate clients), the same token going to `evil.example.com`
+  fires. Combined with the existing Credential Theft detector this
+  pushes real exfiltration cases firmly into BLOCKED territory.
+- **Detector: Linux System Tampering** (CRITICAL). Conservative regex
+  set for PAM (`pam_authenticate`, `libpam.so`), eBPF (`BPF_PROG_LOAD`,
+  `bpf_load_program`, `perf_event_open`), kernel module loading
+  (`init_module`, `finit_module`, `delete_module`), and `LD_PRELOAD` /
+  `/etc/ld.so.preload`. None of these symbols belong in a normal npm
+  package — direct response to recent QLNX-style RAT delivery patterns.
+- **Deprecation notices in scan reports.** Curated, info-only annotation
+  — no score impact, no verdict change. Initial set:
+  - `vm2` → `isolated-vm` (12 critical sandbox-escape CVEs through
+    CVE-2026-44009; the architecture cannot be fully secured)
+  - `request` / `request-promise` → `undici` / `axios` / `got`
+  - `node-uuid` → `uuid` (renamed)
+  - `tslint` → `eslint` + `@typescript-eslint`
+  - `bower` → `npm` / `yarn` / `pnpm`
+  - `node-sass` → `sass` (Dart Sass)
+  - `babel-eslint` → `@babel/eslint-parser`
+  - `left-pad`, `is-array`, `har-validator`, `node-sass` (with stdlib
+    or replacement guidance)
+
+  Notices render under the report card as `note deprecated — <message>`
+  in cyan, and ship in `phi-report.json` under a per-package `notices`
+  array.
+
+### Changed
+
+- Report cards print for any package with detections, advisories, OR
+  notices (previously: only detections + advisories). Lets a deprecated
+  but otherwise-safe package surface its replacement guidance.
+
 ## [0.2.1] — 2026-05-08
 
 ### Added

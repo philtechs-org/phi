@@ -73,7 +73,7 @@ func WriteLockfile(path string, tree *resolver.Tree, scans map[string]*analyzer.
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(body, '\n'), 0o644)
+	return writeFileAtomic(path, append(body, '\n'), 0o644)
 }
 
 // ReadLockfile parses phi.lock back into a tree we can install from. The

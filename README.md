@@ -34,7 +34,7 @@ Phi is a real package manager — it does not wrap or shell out to npm:
 
 1. Resolves the full transitive tree itself (Masterminds/semver, npm registry).
 2. Fetches every tarball, verifies sha512 integrity from the packument.
-3. Runs an 11-detector malware analysis on each tarball **before extraction**.
+3. Runs a 13-detector malware analysis on each tarball **before extraction**.
 4. Aggregates verdicts: any *blocked* package aborts the install; *review* prompts.
 5. Extracts approved packages into `node_modules/<name>/`.
 6. **Lifecycle scripts (`preinstall`, `install`, `postinstall`) never run by default.** This is the single biggest attack surface npm exposes; phi closes it. Opt in per-package via `--allow-scripts <pkg>`.
@@ -76,6 +76,7 @@ go build -o phi ./cmd/phi
 | `phi update [pkg…]` | `u` | Re-resolve fresh, ignoring `phi.lock`. |
 | `phi remove <pkg…>` | `rm` | Drop from `package.json`, `phi.lock`, and `node_modules`. |
 | `phi audit` | — | Scan all dependencies without installing. |
+| `phi audit fix [--apply\|--force]` | — | Propose fixes for typosquats, deprecated packages, and advisory bumps. Preview by default; `--apply` writes safe fixes; `--force` allows breaking changes. |
 | `phi do <script> [args…]` | `d` | Run a script from `package.json` with `node_modules/.bin` on PATH. |
 | `phi exec <bin> [args…]` | `x` | Run a binary from `node_modules/.bin` directly. |
 | `phi dev` / `build` / `start` / `test` / `lint` / `preview` / `prod` | — | Direct shortcuts to `phi do <name>`. |
@@ -125,7 +126,7 @@ phi install --allow-scripts esbuild,sharp    # opt-in to lifecycle scripts
 
 ## Detection engine
 
-Eleven detectors cover the npm threat landscape. Hits from any layer add to a single per-package risk score.
+Thirteen detectors cover the npm threat landscape. Hits from any layer add to a single per-package risk score.
 
 | Detector | Severity | Catches |
 |---|---|---|
@@ -140,6 +141,8 @@ Eleven detectors cover the npm threat landscape. Hits from any layer add to a si
 | Network Exfiltration | HIGH | `.onion` URLs and known exfil services (pastebin, requestbin, webhook.site, ngrok, transfer.sh, …) |
 | File System Access | HIGH | reads of `/etc/passwd`, `/etc/shadow`, `.aws/credentials`, `.kube/config`, `.docker/config.json` |
 | Typosquatting | HIGH | package name within Levenshtein distance 1 of a popular package (lodash, express, axios, react, vue, …) |
+| Credential Exfil Flow | CRITICAL | credential read **+** outbound HTTP in the same file, to a non-canonical host. Allowlist suppresses legit API clients (octokit + `GITHUB_TOKEN` + `api.github.com` is silent; same token + arbitrary host fires). File-based reads (`id_rsa`, `.npmrc`) bypass the allowlist and always fire. |
+| Linux System Tampering | CRITICAL | PAM (`pam_authenticate`, `libpam.so`), eBPF (`BPF_PROG_LOAD`, `bpf_load_program`, `perf_event_open`), kernel modules (`init_module`/`finit_module`/`delete_module`), `LD_PRELOAD`, `/etc/ld.so.preload`. Conservative word-bounded regex — virtually nonexistent in legitimate npm packages. |
 
 ### Scoring
 

@@ -95,6 +95,16 @@ func SelfUpdate(currentVersion string, opts SelfUpdateOptions) error {
 		return err
 	}
 
+	// Preflight: confirm we can actually write to the install dir
+	// BEFORE spending a network round-trip + multiple MB of bandwidth
+	// on a download we can't deploy. Catches the classic
+	// "phi installed in /usr/local/bin, user isn't sudo" case with a
+	// clear error instead of a confusing post-download permission
+	// failure.
+	if err := preflightInstallDir(); err != nil {
+		return err
+	}
+
 	if !opts.Yes {
 		fmt.Printf("update phi from %s to %s? [y/N] ", currentVersion, rel.TagName)
 		sc := bufio.NewScanner(os.Stdin)
@@ -135,6 +145,40 @@ func SelfUpdate(currentVersion string, opts SelfUpdateOptions) error {
 
 	fmt.Printf("\nok: phi updated to %s\n", rel.TagName)
 	fmt.Printf("  release notes: %s\n", rel.HTMLURL)
+	return nil
+}
+
+// preflightInstallDir verifies that the directory containing the
+// running phi binary is writable BEFORE we download anything. Catches
+// the common "installed system-wide, user isn't root" case with a
+// clear, actionable message instead of a generic post-download failure.
+//
+// We open a sibling temp file with the same prefix the real install
+// uses; if create succeeds, we have enough permission for the eventual
+// rename-over. If it fails, surface a platform-aware suggestion
+// (sudo on Unix, "run from elevated PowerShell" on Windows).
+func preflightInstallDir() error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate self: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
+	dir := filepath.Dir(self)
+	probe, err := os.CreateTemp(dir, ".phi-preflight-*")
+	if err != nil {
+		hint := "the directory may need elevated permissions"
+		if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+			hint = "try: sudo phi self-update --yes"
+		} else if runtime.GOOS == "windows" {
+			hint = "try running from an Administrator PowerShell, or reinstall to a user-writable location"
+		}
+		return fmt.Errorf("can't write to install directory %s: %w\n  %s", dir, err, hint)
+	}
+	probePath := probe.Name()
+	probe.Close()
+	_ = os.Remove(probePath)
 	return nil
 }
 

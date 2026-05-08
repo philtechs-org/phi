@@ -133,5 +133,5 @@ func removeFromPackageJSON(names []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile("package.json", append(out, '\n'), 0o644)
+	return writeFileAtomic("package.json", append(out, '\n'), 0o644)
 }
