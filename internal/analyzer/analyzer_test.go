@@ -320,11 +320,55 @@ func TestNormalizePkgName(t *testing.T) {
 		"node-mailer":       "NODE_MAILER",
 		"@scope/my-lib":     "SCOPE_MY_LIB",
 		"@stripe/stripe-js": "STRIPE_STRIPE_JS",
+		// Dots in npm names (discord.js, lodash.merge) must normalize so
+		// that the package-vs-envvar overlap heuristic recognizes the parts.
+		"discord.js":     "DISCORD_JS",
+		"lodash.merge":   "LODASH_MERGE",
+		"@scope/foo.bar": "SCOPE_FOO_BAR",
 	}
 	for in, want := range cases {
 		if got := normalizePkgName(in); got != want {
 			t.Errorf("normalizePkgName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestRunDetectors_DiscordJsOwnConfig is the regression test for the
+// discord.js false positive: package "discord.js" reading
+// process.env.DISCORD_TOKEN must not fire Credential Theft, because that
+// env var is the package's own config (same convention as resend reading
+// RESEND_API_KEY). The bug: normalizePkgName didn't handle "." so
+// "discord.js" stayed "DISCORD.JS" and never matched the underscore-token
+// search against "DISCORD_TOKEN".
+func TestRunDetectors_DiscordJsOwnConfig(t *testing.T) {
+	body := `const token = process.env.DISCORD_TOKEN; client.login(token);`
+	got := runOneCtx(body, "discord.js")
+	if has(got, "Credential Theft") {
+		t.Errorf("discord.js reading DISCORD_TOKEN should not fire Credential Theft, got %v", got)
+	}
+}
+
+// TestRunDetectors_WASMNotObfuscation: undici and similar libraries embed
+// WebAssembly modules as base64 strings. The base64 starts with "AGFzbQ"
+// (the WASM magic "\0asm" encoded), which is unambiguously identifiable
+// as a WASM blob. Phi must not flag it as Code Obfuscation.
+func TestRunDetectors_WASMNotObfuscation(t *testing.T) {
+	// Realistic-ish WASM-prefixed base64 (>40 chars to clear the regex floor).
+	body := `const wasmBytes = Buffer.from('AGFzbQEAAAABJwdgAX8Bf2ADf39/AX9gAX8AYAJ/fwBgBH9/f38Bf2AAAGADf39/AA==', 'base64');`
+	got := runOneCtx(body, "undici")
+	if has(got, "Code Obfuscation") {
+		t.Errorf("WASM-prefixed base64 should not fire Code Obfuscation, got %v", got)
+	}
+}
+
+// TestRunDetectors_RealObfuscationStillFires: regression check that the
+// WASM exception didn't accidentally suppress real obfuscation hits.
+func TestRunDetectors_RealObfuscationStillFires(t *testing.T) {
+	// Random base64 with no WASM magic — looks like an opaque payload.
+	body := `eval(Buffer.from('Y29uc29sZS5sb2coJ3B3bmVkJyk7Y29uc3QgeCA9IDE7Y29uc3QgeSA9IDI7Y29uc3QgeiA9IDM7', 'base64').toString())`
+	got := runOneCtx(body, "evil-pkg")
+	if !has(got, "Code Obfuscation") {
+		t.Errorf("expected Code Obfuscation to still fire on non-WASM base64 payload, got %v", got)
 	}
 }
 

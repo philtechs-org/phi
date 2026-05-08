@@ -228,10 +228,20 @@ func detectDynamicCodeCompilation(content string, ctx detectionContext) (string,
 var (
 	obfHexEscapeRe  = regexp.MustCompile(`(?:\\x[0-9a-fA-F]{2}){6,}`)
 	obfHexPairRe    = regexp.MustCompile(`\\x([0-9a-fA-F]{2})`)
-	obfBase64Re     = regexp.MustCompile(`Buffer\.from\(\s*['"][A-Za-z0-9+/=]{40,}['"]\s*,\s*['"]base64['"]\s*\)`)
+	// obfBase64Re uses a capturing group around the base64 payload so we can
+	// inspect its prefix and skip known-benign blobs (WASM modules, etc.)
+	// before claiming "obfuscation".
+	obfBase64Re     = regexp.MustCompile(`Buffer\.from\(\s*['"]([A-Za-z0-9+/=]{40,})['"]\s*,\s*['"]base64['"]\s*\)`)
+	obfAtobLongRe   = regexp.MustCompile(`atob\s*\(\s*['"]([A-Za-z0-9+/=]{40,})['"]\s*\)`)
 	obfFromCharCode = regexp.MustCompile(`String\.fromCharCode\s*\(\s*(?:0x[0-9a-fA-F]+|\d+)(?:\s*,\s*(?:0x[0-9a-fA-F]+|\d+)){3,}`)
-	obfAtobLong     = regexp.MustCompile(`atob\s*\(\s*['"][A-Za-z0-9+/=]{40,}['"]\s*\)`)
 )
+
+// base64WASMPrefix is the base64 encoding of the 4-byte WASM magic number
+// "\0asm". Any base64 string starting with this prefix is a WebAssembly
+// module — used legitimately by libraries like undici (llhttp parser),
+// sharp, fs-native, etc. for high-performance code paths. Treating it as
+// "obfuscated payload" is a false positive.
+const base64WASMPrefix = "AGFzbQ"
 
 func detectCodeObfuscation(content string, ctx detectionContext) (string, bool) {
 	if loc := obfHexEscapeRe.FindStringIndex(content); loc != nil {
@@ -240,12 +250,33 @@ func detectCodeObfuscation(content string, ctx detectionContext) (string, bool) 
 			return evidence, true
 		}
 	}
-	for _, re := range []*regexp.Regexp{obfBase64Re, obfFromCharCode, obfAtobLong} {
-		if loc := re.FindStringIndex(content); loc != nil {
-			return content[loc[0]:loc[1]], true
+	for _, m := range obfBase64Re.FindAllStringSubmatch(content, -1) {
+		if strings.HasPrefix(m[1], base64WASMPrefix) {
+			continue // legitimate embedded WASM module
 		}
+		return truncEvidence(m[0]), true
+	}
+	for _, m := range obfAtobLongRe.FindAllStringSubmatch(content, -1) {
+		if strings.HasPrefix(m[1], base64WASMPrefix) {
+			continue
+		}
+		return truncEvidence(m[0]), true
+	}
+	if loc := obfFromCharCode.FindStringIndex(content); loc != nil {
+		return content[loc[0]:loc[1]], true
 	}
 	return "", false
+}
+
+// truncEvidence keeps detection evidence readable in CLI output / JSON
+// reports — large blobs (multi-kilobyte WASM, embedded fonts) used to
+// blow up report card lines.
+func truncEvidence(s string) string {
+	const max = 120
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 func hasDiverseHexEscapes(s string, minDistinct int) bool {
@@ -366,6 +397,11 @@ func normalizePkgName(s string) string {
 	s = strings.TrimPrefix(s, "@")
 	s = strings.ReplaceAll(s, "/", "_")
 	s = strings.ReplaceAll(s, "-", "_")
+	// Dots are common in npm names (discord.js, lodash.merge); normalize so
+	// the underscore-token split below recognizes the parts. Without this
+	// "discord.js" stayed "DISCORD.JS" and never matched DISCORD_TOKEN as
+	// own-config, producing a false-positive credential-theft hit.
+	s = strings.ReplaceAll(s, ".", "_")
 	return strings.ToUpper(s)
 }
 

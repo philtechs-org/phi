@@ -12,7 +12,7 @@ import (
 
 // version is set by `go build`'s default ("0.1.0-dev") or overridden by
 // goreleaser via -ldflags -X main.version=<tag> on tagged releases.
-var version = "0.1.0-dev"
+var version = "0.2.0-dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -36,6 +36,9 @@ func main() {
 		exitOnErr(installer.AuditWith(opts))
 	case "init":
 		exitOnErr(installer.Init(parseInitFlags(args)))
+	case "create":
+		framework, name, extra := parseCreateArgs(args)
+		exitOnErr(installer.Create(framework, name, extra))
 	case "do", "d":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "phi: do requires a script name")
@@ -99,6 +102,8 @@ func parseFlags(args []string) (installer.Options, []string) {
 			opts.SaveExact = true
 		case a == "--no-advisories":
 			opts.NoAdvisories = true
+		case a == "--force" || a == "-f":
+			opts.Force = true
 		default:
 			rest = append(rest, a)
 		}
@@ -115,6 +120,29 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseCreateArgs splits `phi create <framework> <name> [-- pass-through...]`
+// into its three pieces. Anything after a literal `--` is forwarded to the
+// scaffolder verbatim. If `--` is omitted, all trailing args are forwarded.
+func parseCreateArgs(args []string) (framework, name string, extra []string) {
+	if len(args) >= 1 {
+		framework = args[0]
+	}
+	if len(args) >= 2 {
+		name = args[1]
+	}
+	if len(args) > 2 {
+		rest := args[2:]
+		for i, a := range rest {
+			if a == "--" {
+				extra = append(extra, rest[i+1:]...)
+				return
+			}
+		}
+		extra = append(extra, rest...)
+	}
+	return
 }
 
 func parseInitFlags(args []string) installer.InitOptions {

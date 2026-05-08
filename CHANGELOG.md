@@ -5,6 +5,68 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-05-08
+
+### Added
+
+- `phi create <framework> <project-name> [-- pass-through-args…]` — scaffold a
+  new project. Five frameworks shipped:
+  - `phi create react <name>` — React + Vite + TypeScript via `create-vite`
+  - `phi create next <name>` — Next.js (App Router) via `create-next-app`
+  - `phi create express <name>` — built-in minimal Express template (no
+    network fetch — bundled in the phi binary via `embed.FS`)
+  - `phi create fastify <name>` — Fastify HTTP server via `fastify-cli`
+  - `phi create nest <name>` — NestJS application via `@nestjs/cli`
+
+  Proxy-mode frameworks (everything except Express) install the canonical
+  scaffolder package into a temp directory through phi's normal scan +
+  extract pipeline (lifecycle scripts off — same as `phi install`), then
+  invoke the scaffolder's binary in the user's current directory. The
+  temp directory is cleaned up regardless of outcome.
+
+  Pass-through args after `--` go straight to the scaffolder. User flags
+  override phi's defaults — e.g. `phi create react app -- --template
+  vanilla-ts` swaps phi's default `react-ts` template.
+
+- `phi install` / `update` now accept `--force` (or `-f`). Overrides
+  the BLOCKED verdict and proceeds with installation. The scan still
+  runs and `phi-report.json` is still written, so the audit trail is
+  intact — the user has just chosen to install regardless. Loud warning
+  printed for any blocked package being force-installed. Implies
+  auto-approval of REVIEW packages. Use case: a known-trusted package
+  that phi has flagged (e.g. discord.js's internal `_eval` method).
+
+### Changed
+
+- `installer.Options` gained two internal fields used by `phi create`:
+  - `Quiet bool` — suppresses the banner, progress bar, and per-package
+    report cards while still surfacing errors and warnings. Used so the
+    scaffolder's UI dominates the user's terminal.
+  - `AutoApproveReview bool` — skips the interactive REVIEW prompt.
+    BLOCKED packages still abort. Used only by `phi create` for
+    ephemeral scaffolder installs (the temp dir is wiped after one run);
+    the user's actual project deps are reviewed normally when they later
+    run `phi install` in their new project.
+
+  Neither field is exposed as a CLI flag for `phi install` — bypassing
+  REVIEW by default would defeat phi's purpose.
+
+### Fixed
+
+- **False positive: `discord.js` flagged for Credential Theft** when it
+  read its own `process.env.DISCORD_TOKEN`. Cause: `normalizePkgName`
+  didn't replace `.` so "discord.js" stayed "DISCORD.JS", and the
+  package-vs-envvar overlap heuristic never matched the "DISCORD"
+  token against "DISCORD_TOKEN". Fix: dots are now normalized to
+  underscores along with `/` and `-`. (Same bug class would have
+  affected `lodash.merge`, `body-parser.json`, etc.)
+- **False positive: `undici` flagged for Code Obfuscation** on the
+  `Buffer.from('AGFzbQ...', 'base64')` call that loads the embedded
+  llhttp WASM parser. Cause: any base64 payload of 40+ chars matched
+  the obfuscation pattern, even legitimate WebAssembly. Fix: base64
+  payloads starting with `AGFzbQ` (the WASM magic "\0asm" encoded) are
+  now skipped — that prefix is unambiguously a WASM module.
+
 ## [0.1.2] — 2026-05-08
 
 ### Changed

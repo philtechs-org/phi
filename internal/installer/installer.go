@@ -64,6 +64,27 @@ type Options struct {
 	// NoAdvisories skips the OSV advisory query entirely. Useful for
 	// offline installs and CI environments without internet egress.
 	NoAdvisories bool
+	// AutoApproveReview skips the interactive REVIEW prompt and proceeds
+	// as if the user had answered yes. BLOCKED packages still abort the
+	// install. Used by `phi create` for ephemeral scaffolder installs
+	// where the project's actual deps will be reviewed by a later
+	// `phi install` in the user's new project directory. Not exposed as
+	// a CLI flag for the install command — bypassing review by default
+	// would defeat phi's purpose.
+	AutoApproveReview bool
+	// Force overrides the BLOCKED verdict and proceeds with installation
+	// anyway. Implies AutoApproveReview. The scan still runs and the
+	// report is still written — phi's audit trail is preserved — but the
+	// user has chosen to install regardless. Loud warning printed when
+	// any blocked package is force-installed. Exposed as --force for the
+	// install/update commands; meant for cases where a user trusts a
+	// package that phi has flagged (false positive in a detector, or
+	// known-but-acceptable risk).
+	Force bool
+	// Quiet suppresses the banner, progress bar, and per-package report
+	// cards. Errors and warnings still print. Used internally by phi
+	// create so the scaffolder's own UI dominates the user's terminal.
+	Quiet bool
 }
 
 func Install(args []string) error {
@@ -110,7 +131,7 @@ func install(client *registry.Client, args []string, opts Options) error {
 		return errors.New("no packages to install (and no package.json found)")
 	}
 
-	if !opts.JSON {
+	if !opts.JSON && !opts.Quiet {
 		ui.PrintBanner()
 		if len(workspaces) > 0 {
 			fmt.Printf("monorepo: %d workspace(s) detected\n", len(workspaces))
@@ -121,12 +142,12 @@ func install(client *registry.Client, args []string, opts Options) error {
 	if err != nil {
 		return err
 	}
-	if fromLock && !opts.JSON {
+	if fromLock && !opts.JSON && !opts.Quiet {
 		fmt.Println("using lockfile (phi.lock)")
-	} else if !opts.JSON {
+	} else if !opts.JSON && !opts.Quiet {
 		fmt.Println("resolving dependency tree...")
 	}
-	if !opts.JSON {
+	if !opts.JSON && !opts.Quiet {
 		for _, w := range tree.Warnings {
 			ui.PrintWarning(w)
 		}
@@ -136,10 +157,10 @@ func install(client *registry.Client, args []string, opts Options) error {
 	}
 	tree.Roots = rootsFromDirect(tree, direct)
 
-	if !opts.JSON {
+	if !opts.JSON && !opts.Quiet {
 		fmt.Printf("scanning %d packages...\n", len(tree.All))
 	}
-	scans, bufs, err := scanWithProgress(client, tree, opts.JSON)
+	scans, bufs, err := scanWithProgress(client, tree, opts.JSON || opts.Quiet)
 	if err != nil {
 		return err
 	}
@@ -147,7 +168,7 @@ func install(client *registry.Client, args []string, opts Options) error {
 	advs := queryAdvisories(tree, opts)
 	mergeAdvisories(scans, advs)
 
-	if !opts.JSON {
+	if !opts.JSON && !opts.Quiet {
 		for path, r := range scans {
 			if r.Verdict != scorer.VerdictSafe || len(advs[path]) > 0 {
 				ui.PrintReportCard(r, advs[path])
@@ -158,26 +179,47 @@ func install(client *registry.Client, args []string, opts Options) error {
 	blocked, review := splitVerdicts(scans)
 
 	if len(blocked) > 0 {
-		_ = WriteReport(reportPath, scans, advs)
-		if opts.JSON {
-			emitJSONReport()
+		if !opts.Force {
+			_ = WriteReport(reportPath, scans, advs)
+			if opts.JSON {
+				emitJSONReport()
+			}
+			return fmt.Errorf("install aborted: %d package(s) blocked; report written to %s (pass --force to override)",
+				len(blocked), reportPath)
 		}
-		return fmt.Errorf("install aborted: %d package(s) blocked; report written to %s",
-			len(blocked), reportPath)
+		if !opts.Quiet {
+			ui.PrintWarning(fmt.Sprintf(
+				"--force: proceeding with %d BLOCKED package(s) — report still written to %s",
+				len(blocked), reportPath))
+			for _, r := range blocked {
+				fmt.Printf("  forcing: %s@%s  score=%d  detections=%d\n",
+					r.PackageName, r.PackageVersion, r.RiskScore, len(r.Detections))
+			}
+		}
 	}
 	if len(review) > 0 {
-		if opts.JSON {
+		switch {
+		case opts.AutoApproveReview, opts.Force:
+			if !opts.Quiet {
+				if opts.Force {
+					fmt.Printf("--force: auto-approving %d review-flagged package(s)\n", len(review))
+				} else {
+					fmt.Printf("auto-approving %d review-flagged package(s) (scaffolder context)\n", len(review))
+				}
+			}
+		case opts.JSON:
 			_ = WriteReport(reportPath, scans, advs)
 			emitJSONReport()
 			return fmt.Errorf("install aborted: %d package(s) flagged for review (non-interactive mode)", len(review))
-		}
-		if !ui.PromptApproveTree(review) {
-			_ = WriteReport(reportPath, scans, advs)
-			return fmt.Errorf("install aborted by user; report written to %s", reportPath)
+		default:
+			if !ui.PromptApproveTree(review) {
+				_ = WriteReport(reportPath, scans, advs)
+				return fmt.Errorf("install aborted by user; report written to %s", reportPath)
+			}
 		}
 	}
 
-	if !opts.JSON {
+	if !opts.JSON && !opts.Quiet {
 		fmt.Println("\nextracting approved packages...")
 	}
 	// extracted: package name → install dir, used by bin shims and lifecycle
@@ -197,12 +239,12 @@ func install(client *registry.Client, args []string, opts Options) error {
 		}
 	}
 
-	if err := CreateBinShims("node_modules", extracted); err != nil && !opts.JSON {
+	if err := CreateBinShims("node_modules", extracted); err != nil && !opts.JSON && !opts.Quiet {
 		ui.PrintWarning(fmt.Sprintf("bin shim creation failed: %v", err))
 	}
 
 	if len(workspaces) > 0 {
-		if err := linkWorkspaces(workspaces); err != nil && !opts.JSON {
+		if err := linkWorkspaces(workspaces); err != nil && !opts.JSON && !opts.Quiet {
 			ui.PrintWarning(fmt.Sprintf("workspace links: %v", err))
 		}
 	}
@@ -220,13 +262,18 @@ func install(client *registry.Client, args []string, opts Options) error {
 		return fmt.Errorf("write %s: %w", reportPath, err)
 	}
 
-	if err := persistArgsToPackageJSON(args, tree, opts); err != nil && !opts.JSON {
-		ui.PrintWarning(fmt.Sprintf("update package.json: %v", err))
+	if !opts.Quiet {
+		if err := persistArgsToPackageJSON(args, tree, opts); err != nil && !opts.JSON {
+			ui.PrintWarning(fmt.Sprintf("update package.json: %v", err))
+		}
 	}
 
-	if opts.JSON {
+	switch {
+	case opts.JSON:
 		emitJSONReport()
-	} else {
+	case opts.Quiet:
+		// Caller (phi create) handles its own summary.
+	default:
 		ui.PrintInstallSummary(scans, lockPath, reportPath)
 	}
 	return nil

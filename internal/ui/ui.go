@@ -103,6 +103,7 @@ func PrintHelp() {
 
 Commands:
   phi init [--yes]                Create package.json + .gitignore + README.md
+  phi create <framework> <name>   Scaffold a new project (react, next, express, fastify, nest)
   phi install (i, a) [pkg...]     Scan and install packages (union of args and package.json)
   phi update (u) [pkg...]         Re-resolve and install fresh, ignoring phi.lock
   phi remove (rm) <pkg...>        Drop packages from package.json, phi.lock, and node_modules
@@ -125,7 +126,8 @@ Flags (install/update/audit):
   --save-dev / -D           Write to devDependencies (move from dependencies if needed)
   --save-peer               Write to peerDependencies
   --save-exact / -E         Pin without caret prefix
-  --no-advisories           Skip OSV vulnerability database query (offline mode)`)
+  --no-advisories           Skip OSV vulnerability database query (offline mode)
+  --force / -f              Override BLOCKED verdicts and install anyway (report still written)`)
 }
 
 type counts struct {

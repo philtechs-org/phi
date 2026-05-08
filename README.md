@@ -65,6 +65,7 @@ go build -o phi ./cmd/phi
 | Command | Aliases | Purpose |
 |---|---|---|
 | `phi init` | — | Create `package.json` + `.gitignore` + `README.md`. `--yes` skips prompts. |
+| `phi create <fw> <name>` | — | Scaffold a project: `react`, `next`, `express`, `fastify`, `nest`. |
 | `phi install [pkg…]` | `i`, `a` | Scan and install. Args are added to `package.json`. |
 | `phi update [pkg…]` | `u` | Re-resolve fresh, ignoring `phi.lock`. |
 | `phi remove <pkg…>` | `rm` | Drop from `package.json`, `phi.lock`, and `node_modules`. |
@@ -84,7 +85,10 @@ go build -o phi ./cmd/phi
 ## Usage examples
 
 ```sh
-phi init                          # bootstrap a new project
+phi init                          # bootstrap a new project (empty package.json)
+phi create react my-app           # scaffold a React+Vite+TS project
+phi create express my-server      # scaffold a minimal Express server
+phi create next my-site -- --typescript --app   # next-app, with pass-through flags
 phi install                       # scan + install all of package.json
 phi i lodash                      # add lodash (short alias)
 phi install chalk@^5.0.0          # specific version range
