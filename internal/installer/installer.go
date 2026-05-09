@@ -136,6 +136,13 @@ func install(client *registry.Client, args []string, opts Options) error {
 		if len(workspaces) > 0 {
 			fmt.Printf("monorepo: %d workspace(s) detected\n", len(workspaces))
 		}
+		// Print BEFORE loadTree runs. The resolver does a BFS over npm
+		// packuments and can take a few seconds (or longer on a flaky
+		// network); without this line the user sees only the banner and
+		// silence until the resolve completes — confusing on slow links
+		// and especially on timeout failures, where the silence is then
+		// followed by an unexplained `fetch <pkg>: deadline exceeded`.
+		fmt.Println("resolving dependency tree...")
 	}
 
 	tree, fromLock, err := loadTree(client, direct, opts)
@@ -143,9 +150,7 @@ func install(client *registry.Client, args []string, opts Options) error {
 		return err
 	}
 	if fromLock && !opts.JSON && !opts.Quiet {
-		fmt.Println("using lockfile (phi.lock)")
-	} else if !opts.JSON && !opts.Quiet {
-		fmt.Println("resolving dependency tree...")
+		fmt.Println("(used phi.lock — fresh resolve skipped)")
 	}
 	if !opts.JSON && !opts.Quiet {
 		for _, w := range tree.Warnings {
