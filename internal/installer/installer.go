@@ -136,21 +136,29 @@ func install(client *registry.Client, args []string, opts Options) error {
 		if len(workspaces) > 0 {
 			fmt.Printf("monorepo: %d workspace(s) detected\n", len(workspaces))
 		}
-		// Print BEFORE loadTree runs. The resolver does a BFS over npm
-		// packuments and can take a few seconds (or longer on a flaky
-		// network); without this line the user sees only the banner and
-		// silence until the resolve completes — confusing on slow links
-		// and especially on timeout failures, where the silence is then
-		// followed by an unexplained `fetch <pkg>: deadline exceeded`.
-		fmt.Println("resolving dependency tree...")
+	}
+
+	// Animated spinner during the resolver's BFS over npm packuments.
+	// Without this the user sees the banner then silence until the
+	// resolve either completes or surfaces a fetch timeout — and on a
+	// flaky network the silence can run tens of seconds.
+	var spinner *ui.Spinner
+	if !opts.JSON && !opts.Quiet {
+		spinner = ui.NewSpinner("resolving dependency tree...")
+		spinner.Start()
 	}
 
 	tree, fromLock, err := loadTree(client, direct, opts)
 	if err != nil {
+		spinner.Stop()
 		return err
 	}
-	if fromLock && !opts.JSON && !opts.Quiet {
-		fmt.Println("(used phi.lock — fresh resolve skipped)")
+	if !opts.JSON && !opts.Quiet {
+		if fromLock {
+			spinner.Done(fmt.Sprintf("resolved (used phi.lock — %d packages)", len(tree.All)))
+		} else {
+			spinner.Done(fmt.Sprintf("resolved %d packages", len(tree.All)))
+		}
 	}
 	if !opts.JSON && !opts.Quiet {
 		for _, w := range tree.Warnings {
@@ -322,14 +330,21 @@ func audit(client *registry.Client, opts Options) error {
 
 	if !opts.JSON {
 		ui.PrintBanner()
-		fmt.Println("resolving dependency tree...")
+	}
+
+	var spinner *ui.Spinner
+	if !opts.JSON {
+		spinner = ui.NewSpinner("resolving dependency tree...")
+		spinner.Start()
 	}
 
 	tree, _, err := loadTree(client, direct, Options{Mode: ModeAuto})
 	if err != nil {
+		spinner.Stop()
 		return err
 	}
 	if !opts.JSON {
+		spinner.Done(fmt.Sprintf("resolved %d packages", len(tree.All)))
 		for _, w := range tree.Warnings {
 			ui.PrintWarning(w)
 		}

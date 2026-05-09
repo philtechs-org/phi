@@ -85,11 +85,14 @@ func AuditFix(opts FixOptions) error {
 	direct := targetsToMap(targets)
 
 	ui.PrintBanner()
-	fmt.Println("resolving dependency tree...")
+	spinner := ui.NewSpinner("resolving dependency tree...")
+	spinner.Start()
 	tree, _, err := loadTree(client, direct, Options{Mode: ModeAuto})
 	if err != nil {
+		spinner.Stop()
 		return err
 	}
+	spinner.Done(fmt.Sprintf("resolved %d packages", len(tree.All)))
 	if len(tree.All) == 0 {
 		return errors.New("empty resolution tree")
 	}

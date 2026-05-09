@@ -21,6 +21,91 @@ func PrintBanner() {
 	fmt.Println()
 }
 
+// Spinner is phi's indeterminate-progress indicator — used during
+// phases where we don't know the total ahead of time (most importantly
+// the resolver's BFS over npm packuments). Same cross-shell-uniform
+// approach as Progress: ASCII frames + carriage return + fixed-width
+// space-pad so it renders identically on cmd.exe, PowerShell, Windows
+// Terminal, git-bash, macOS Terminal, iTerm, and Linux ttys. Writes to
+// stderr so a piped stdout (e.g. JSON mode) stays clean.
+type Spinner struct {
+	msg     string
+	out     io.Writer
+	stop    chan struct{}
+	done    chan struct{}
+	width   int
+	started bool
+}
+
+const spinnerWidth = 64
+
+func NewSpinner(msg string) *Spinner {
+	return &Spinner{
+		msg:   msg,
+		out:   os.Stderr,
+		stop:  make(chan struct{}),
+		done:  make(chan struct{}),
+		width: spinnerWidth,
+	}
+}
+
+// Start begins the animation in a background goroutine. Safe to call
+// once; subsequent calls are no-ops.
+func (s *Spinner) Start() {
+	if s == nil || s.started {
+		return
+	}
+	s.started = true
+	go func() {
+		defer close(s.done)
+		// ASCII-only frames so the spinner renders the same on every
+		// terminal we support (Windows console fonts that lack braille
+		// glyphs included).
+		frames := []string{"|", "/", "-", "\\"}
+		i := 0
+		t := time.NewTicker(120 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-s.stop:
+				// Clear the line so the caller's follow-up print lands
+				// at column 0 with no spinner residue.
+				fmt.Fprintf(s.out, "\r%s\r", strings.Repeat(" ", s.width))
+				return
+			case <-t.C:
+				line := fmt.Sprintf("  %s %s", frames[i], s.msg)
+				if len(line) >= s.width {
+					line = line[:s.width-1]
+				}
+				fmt.Fprintf(s.out, "\r%-*s", s.width, line)
+				i = (i + 1) % len(frames)
+			}
+		}
+	}()
+}
+
+// Stop ends the animation and clears the line. Caller is responsible
+// for printing whatever comes next.
+func (s *Spinner) Stop() {
+	if s == nil || !s.started {
+		return
+	}
+	close(s.stop)
+	<-s.done
+	s.started = false
+}
+
+// Done replaces the spinner with a single final line — useful for
+// "resolving... 53 packages" style completions where the dynamic state
+// resolves to a static result.
+func (s *Spinner) Done(finalLine string) {
+	s.Stop()
+	if s == nil {
+		return
+	}
+	fmt.Fprintln(s.out, finalLine)
+}
+
 // Progress is phi's in-place scan indicator. Replaces schollz/progressbar
 // because that library wasn't emitting ANSI clear-line codes on every
 // platform we ship to, leaving residual characters when the bar's
