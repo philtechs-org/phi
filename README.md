@@ -6,7 +6,9 @@
 [![License](https://img.shields.io/github/license/philtechs-org/phi?color=84cc16)](https://github.com/philtechs-org/phi/blob/main/LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/philtechs-org/phi/test.yml?branch=main&label=tests)](https://github.com/philtechs-org/phi/actions)
 
-**A security-first package manager for Node.js.** Phi scans every package — top-level and transitive — *before* anything is written to disk, scores it on a 0–100 risk scale, and either installs it, prompts you, or blocks it. Built in Go for speed.
+**Nothing touches your system unverified.** Phi is install-time interception for software supply chains — every dependency, top-level and transitive, gets scanned in memory before any code reaches disk and scored on a 0–100 risk scale. Then phi installs it, prompts you, or blocks it. Lifecycle scripts off by default. Single Go binary. Drop-in for npm today; Go modules next.
+
+For evaluators: see [`THREAT_MODEL.md`](./THREAT_MODEL.md) for what phi defends against, [`ARCHITECTURE.md`](./ARCHITECTURE.md) for how the pipeline works, and [`ROADMAP.md`](./ROADMAP.md) for where this is going (Go modules next, PyPI + crates.io on the horizon).
 
 ```
 phi install express

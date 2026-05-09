@@ -17,7 +17,7 @@ import (
 func PrintBanner() {
 	bold := color.New(color.Bold, color.FgCyan).SprintFunc()
 	dim := color.New(color.Faint).SprintFunc()
-	fmt.Println(bold("Phi") + dim("  · secure package manager"))
+	fmt.Println(bold("Phi") + dim("  · install-time interception · supply chain firewall"))
 	fmt.Println()
 }
 
