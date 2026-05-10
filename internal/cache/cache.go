@@ -78,6 +78,19 @@ func Dir() (string, error) {
 	return dir()
 }
 
+// RunDir returns the on-disk staging directory for a `phi x` (npx-style) run
+// of <name>@<version>. The directory is NOT created — caller decides when.
+// Scoped names ("@scope/pkg") have their slash replaced with a separator that
+// is valid on every filesystem we ship to.
+func RunDir(name, version string) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	safeName := strings.ReplaceAll(name, "/", "__")
+	return filepath.Join(base, "phi", "run", safeName+"@"+version), nil
+}
+
 // Stats summarizes the on-disk cache.
 type Stats struct {
 	Path  string

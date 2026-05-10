@@ -286,7 +286,9 @@ Commands:
   phi audit                       Scan all dependencies without installing
   phi audit fix [--apply|--force] Propose fixes for fixable issues; --apply rewrites package.json
   phi do (d) <script> [args...]   Run a script from package.json (with node_modules/.bin on PATH)
-  phi exec (x) <bin> [args...]    Run a binary from node_modules/.bin
+  phi exec (x) <pkg>[@<ver>] [args...]
+                                  Run a binary; auto-fetch+scan like npx if not in node_modules
+                                  Flags: -p <pkg>  --no-install  -y  --rescan  -f
   phi dev | build | start | ...   Direct shortcuts: same as "phi do <name>"
   phi outdated                    Show direct deps with newer versions available
   phi why <pkg>                   Show why a package is in the dependency tree

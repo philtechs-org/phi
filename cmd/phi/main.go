@@ -54,11 +54,12 @@ func main() {
 		}
 		exitOnErr(installer.Do(args[0], args[1:]))
 	case "exec", "x":
-		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "phi: exec requires a binary name")
+		execOpts, rest := parseExecFlags(args)
+		if len(rest) == 0 {
+			fmt.Fprintln(os.Stderr, "phi: exec requires a package or binary name")
 			os.Exit(2)
 		}
-		exitOnErr(installer.Exec(args[0], args[1:]))
+		exitOnErr(installer.Exec(rest[0], rest[1:], execOpts))
 	case "dev", "build", "start", "test", "lint", "preview", "prod":
 		exitOnErr(installer.Do(cmd, args))
 	case "why":
@@ -153,6 +154,49 @@ func parseCreateArgs(args []string) (framework, name string, extra []string) {
 		extra = append(extra, rest...)
 	}
 	return
+}
+
+// parseExecFlags peels phi's exec flags off the front of args, then stops as
+// soon as it sees the first positional (the package/bin name) or an explicit
+// `--` terminator. Everything from that point on is forwarded to the bin
+// verbatim — without this, `phi x prettier --write src/` would have its
+// `--write` swallowed by phi's flag parser.
+func parseExecFlags(args []string) (installer.ExecOptions, []string) {
+	var opts installer.ExecOptions
+	rest := make([]string, 0, len(args))
+	seenPositional := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if seenPositional {
+			rest = append(rest, a)
+			continue
+		}
+		if a == "--" {
+			rest = append(rest, args[i+1:]...)
+			break
+		}
+		switch {
+		case a == "--package" || a == "-p":
+			if i+1 < len(args) {
+				opts.Package = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(a, "--package="):
+			opts.Package = strings.TrimPrefix(a, "--package=")
+		case a == "--no-install":
+			opts.NoInstall = true
+		case a == "--yes" || a == "-y":
+			opts.Yes = true
+		case a == "--rescan":
+			opts.Rescan = true
+		case a == "--force" || a == "-f":
+			opts.Force = true
+		default:
+			rest = append(rest, a)
+			seenPositional = true
+		}
+	}
+	return opts, rest
 }
 
 func parseAuditFixFlags(args []string) installer.FixOptions {

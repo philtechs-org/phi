@@ -67,26 +67,9 @@ func Do(name string, extra []string) error {
 	return nil
 }
 
-// Exec runs a binary from node_modules/.bin with the given args.
-// Like npm/pnpm exec but never auto-installs — the binary must already be
-// on disk. Useful for one-shot tool invocations: `phi exec eslint .`,
-// `phi exec tsc --watch`. The binary's package was scanned at install
-// time, so it's already passed phi's analysis.
-func Exec(binary string, args []string) error {
-	if binary == "" {
-		return errors.New("exec: binary name required")
-	}
-	binDir := filepath.Join("node_modules", ".bin")
-	if !binaryExists(filepath.Join(binDir, binary)) {
-		return fmt.Errorf("%q not found in %s — install the providing package first",
-			binary, binDir)
-	}
-	full := binary
-	if len(args) > 0 {
-		full = binary + " " + strings.Join(args, " ")
-	}
-	return runUserScript(".", full)
-}
+// Exec moved to staged_run.go to support the npx-style fetch-and-run path
+// alongside the original local-only behavior. Helpers below (binaryExists,
+// runUserScript, augmentPath) are still shared by both paths.
 
 func binaryExists(path string) bool {
 	candidates := []string{path}
