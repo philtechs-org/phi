@@ -14,6 +14,7 @@ Status legend:
 
 ## Shipped
 
+- **v0.3.0** — `phi x` (npx-equivalent: scan-and-run for missing binaries) + animated resolver spinner with no first-frame gap
 - **v0.2.4** — robustness pass + better error handling on Windows
 - **v0.2.3** — `phi audit fix` (auto-fix typosquats, advisories, deprecations) + cross-shell scan indicator
 - **v0.2.2** — supply-chain detector additions + deprecation guidance

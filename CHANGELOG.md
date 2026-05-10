@@ -5,6 +5,44 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-05-10
+
+### Added
+
+- **`phi x` (npx-equivalent): scan-and-run for missing binaries.** The
+  existing `phi exec` / `phi x` aliases now mirror `npx`: if the requested
+  bin isn't already in `node_modules/.bin`, phi resolves the providing
+  package, runs the full scanner + advisory pipeline over the transitive
+  tree, and stages the result under `$UserCacheDir/phi/run/<name>@<ver>/`
+  before executing — without polluting the caller's `node_modules`. A
+  `.phi-scan-passed` marker means subsequent invocations of the same
+  resolved version skip the scan and run instantly.
+
+  Behavior matches `npx` where it makes sense (`phi x prettier`,
+  `phi x cowsay@1.5.0`, `phi x -p typescript tsc`, `--` separator,
+  `-y` / `--yes` for non-interactive review-approval) and stays
+  phi-stricter where the threat model demands it (lifecycle scripts
+  remain off; blocked verdicts still abort unless `--force`). New flags
+  on `phi exec` / `phi x`:
+
+  - `-p, --package <pkg>` — package name when bin name differs (npx
+    parity for `tsc` / `typescript`).
+  - `--no-install` — strict-local; preserves the previous behavior.
+  - `-y, --yes` — auto-approve review verdicts (CI / scaffold mode).
+  - `--rescan` — invalidate the cached scan, re-fetch and re-scan.
+  - `-f, --force` — proceed past blocked verdicts (loud warning).
+
+### Changed
+
+- **Animated spinner during the resolver phase**, with the first frame
+  drawn immediately so there's no perceptible gap between the banner
+  and the indicator. Replaces the static "resolving dependency tree…"
+  line in `install`, `update`, `audit`, `audit fix`, and the new staged
+  `phi x` flow. Same cross-shell-uniform technique already used for the
+  scan progress bar (ASCII-only frames + carriage return + fixed-width
+  pad — renders identically on cmd.exe, PowerShell, Windows Terminal,
+  git-bash, and Linux/macOS ttys).
+
 ## [0.2.4] — 2026-05-09
 
 ### Fixed
