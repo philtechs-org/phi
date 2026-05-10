@@ -12,7 +12,7 @@ import (
 
 // version is set by `go build`'s default ("0.1.0-dev") or overridden by
 // goreleaser via -ldflags -X main.version=<tag> on tagged releases.
-var version = "0.3.0"
+var version = "0.3.1"
 
 func main() {
 	// Sweep up the .old binary left by a previous Windows self-update.

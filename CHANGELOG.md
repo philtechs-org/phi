@@ -5,6 +5,30 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-05-10
+
+### Fixed
+
+- **`phi self-update` on Windows: clearer errors + auto-retry through
+  Defender's real-time scan window.** Previously a stale `phi.exe.old`
+  from a prior failed update would silently block the next update with
+  a confusing `rename current binary: Access is denied` — the actual
+  cause (a locked sibling file the rename couldn't replace) wasn't
+  surfaced, leaving users with nothing actionable. Two changes:
+
+  - Stale `phi.exe.old` is now detected explicitly. If it can't be
+    removed, the error message names the file, identifies the typical
+    cause (Defender quarantine), and prints the exact remediation
+    commands (`Add-MpPreference -ExclusionPath …` and the install
+    one-liner fallback).
+  - Both `os.Rename` calls in the Windows path now retry for ~2s
+    (200/400/600/800ms backoff) on access-denied errors, which absorbs
+    Defender's brief real-time-scan locks on freshly-replaced binaries
+    without the user having to re-run anything.
+
+  When retry exhausts, the rename error includes the same actionable
+  guidance as the stale-`.old` case.
+
 ## [0.3.0] — 2026-05-10
 
 ### Added

@@ -435,13 +435,49 @@ func replaceRunningBinary(binaryBytes []byte) error {
 
 	if runtime.GOOS == "windows" {
 		oldPath := self + ".old"
-		_ = os.Remove(oldPath) // any leftover from a previous update
-		if err := os.Rename(self, oldPath); err != nil {
-			return fmt.Errorf("rename current binary: %w", err)
+
+		// A stale .old left by a prior failed update can be locked by AV
+		// (Defender quarantine is the common case). The destination name
+		// is then unavailable, so the rename below fails with a confusing
+		// "access denied" that doesn't point at the real cause. Surface
+		// the .old situation explicitly, retrying transient locks first.
+		if _, statErr := os.Stat(oldPath); statErr == nil {
+			if rmErr := windowsRetryAccessDenied(func() error { return os.Remove(oldPath) }); rmErr != nil {
+				return fmt.Errorf(
+					"remove stale %s: %w\n\n"+
+						"  This file is left over from a previous failed update and is\n"+
+						"  currently locked. Most often this is Windows Defender scanning\n"+
+						"  or quarantining the file. Two ways forward:\n\n"+
+						"    1) Exclude the phi dir from Defender, then retry:\n"+
+						"       Add-MpPreference -ExclusionPath \"%s\"\n"+
+						"       phi self-update\n\n"+
+						"    2) Re-run the install one-liner (no self-update needed):\n"+
+						"       iwr -useb https://phi.philtechs.org/install.ps1 | iex",
+					oldPath, rmErr, filepath.Dir(self))
+			}
 		}
-		if err := os.Rename(tmpPath, self); err != nil {
+
+		// Rename of the running .exe usually works on Windows, but
+		// Defender's real-time protection briefly holds the file during
+		// scans of recently-touched binaries. A bounded retry turns
+		// transient access-denied into a clean success without forcing
+		// the user to re-run anything.
+		if err := windowsRetryAccessDenied(func() error { return os.Rename(self, oldPath) }); err != nil {
+			return fmt.Errorf(
+				"rename current binary: %w\n\n"+
+					"  Windows is refusing to rename %s. Most often this is Windows\n"+
+					"  Defender scanning it, or another phi process holding a handle.\n"+
+					"  Two ways forward:\n\n"+
+					"    1) Exclude the phi dir from Defender, then retry:\n"+
+					"       Add-MpPreference -ExclusionPath \"%s\"\n"+
+					"       phi self-update\n\n"+
+					"    2) Re-run the install one-liner (no self-update needed):\n"+
+					"       iwr -useb https://phi.philtechs.org/install.ps1 | iex",
+				err, self, filepath.Dir(self))
+		}
+		if err := windowsRetryAccessDenied(func() error { return os.Rename(tmpPath, self) }); err != nil {
 			// Best-effort restore of the original.
-			_ = os.Rename(oldPath, self)
+			_ = windowsRetryAccessDenied(func() error { return os.Rename(oldPath, self) })
 			return fmt.Errorf("install new binary: %w", err)
 		}
 	} else {
@@ -451,4 +487,41 @@ func replaceRunningBinary(binaryBytes []byte) error {
 	}
 	committed = true
 	return nil
+}
+
+// windowsRetryAccessDenied retries fn for ~2s when it fails with an
+// access-denied-style error. Windows Defender's real-time protection
+// briefly holds files during scans of recently-touched binaries —
+// without a retry, that 200–800ms window shows up to the user as a
+// hard failure they have to manually work around. Non-access-denied
+// errors return immediately so we don't burn time on permanent
+// problems (missing file, permission misconfig, etc.).
+func windowsRetryAccessDenied(fn func() error) error {
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		if !isWindowsAccessDenied(err) {
+			return err
+		}
+		// 200ms, 400ms, 600ms, 800ms = ~2s total before giving up.
+		time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
+	}
+	return err
+}
+
+// isWindowsAccessDenied recognizes the two Windows error strings that
+// signal a transient lock — "access is denied" (Defender scan,
+// quarantine) and "being used by another process" (an open handle).
+// String-matching keeps this portable across Go versions without a
+// build-tagged syscall import.
+func isWindowsAccessDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "access is denied") ||
+		strings.Contains(s, "being used by another process")
 }
