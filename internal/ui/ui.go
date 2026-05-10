@@ -63,6 +63,18 @@ func (s *Spinner) Start() {
 		// glyphs included).
 		frames := []string{"|", "/", "-", "\\"}
 		i := 0
+		draw := func() {
+			line := fmt.Sprintf("  %s %s", frames[i], s.msg)
+			if len(line) >= s.width {
+				line = line[:s.width-1]
+			}
+			fmt.Fprintf(s.out, "\r%-*s", s.width, line)
+			i = (i + 1) % len(frames)
+		}
+		// Draw the first frame immediately so the user sees the message
+		// without waiting a full tick — otherwise there's a perceptible
+		// 120ms gap between the banner and any spinner output.
+		draw()
 		t := time.NewTicker(120 * time.Millisecond)
 		defer t.Stop()
 		for {
@@ -73,12 +85,7 @@ func (s *Spinner) Start() {
 				fmt.Fprintf(s.out, "\r%s\r", strings.Repeat(" ", s.width))
 				return
 			case <-t.C:
-				line := fmt.Sprintf("  %s %s", frames[i], s.msg)
-				if len(line) >= s.width {
-					line = line[:s.width-1]
-				}
-				fmt.Fprintf(s.out, "\r%-*s", s.width, line)
-				i = (i + 1) % len(frames)
+				draw()
 			}
 		}
 	}()
