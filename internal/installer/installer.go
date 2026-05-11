@@ -85,6 +85,12 @@ type Options struct {
 	// cards. Errors and warnings still print. Used internally by phi
 	// create so the scaffolder's own UI dominates the user's terminal.
 	Quiet bool
+	// OmitDev skips devDependencies during resolution. Matches npm's
+	// --omit=dev semantics. Useful for production installs where test
+	// runners, linters, type defs, and build tooling aren't needed in
+	// the deployed bundle. Only affects the root package.json — see
+	// DEFERRED.md for the workspace-level filtering follow-up.
+	OmitDev bool
 }
 
 func Install(args []string) error {
@@ -116,7 +122,7 @@ func UpdateWith(args []string, opts Options) error {
 }
 
 func install(client *registry.Client, args []string, opts Options) error {
-	targets, err := resolveTargets(args)
+	targets, err := resolveTargets(args, opts)
 	if err != nil {
 		return err
 	}
@@ -217,7 +223,7 @@ func install(client *registry.Client, args []string, opts Options) error {
 				if opts.Force {
 					fmt.Printf("--force: auto-approving %d review-flagged package(s)\n", len(review))
 				} else {
-					fmt.Printf("auto-approving %d review-flagged package(s) (scaffolder context)\n", len(review))
+					fmt.Printf("auto-approving %d review-flagged package(s)\n", len(review))
 				}
 			}
 		case opts.JSON:
@@ -319,7 +325,7 @@ func persistArgsToPackageJSON(args []string, tree *resolver.Tree, opts Options) 
 }
 
 func audit(client *registry.Client, opts Options) error {
-	targets, err := resolveTargets(nil)
+	targets, err := resolveTargets(nil, opts)
 	if err != nil {
 		return err
 	}
@@ -443,13 +449,17 @@ type target struct {
 // resolveTargets returns the union of package.json's deps and any explicit
 // args. Args take precedence on name conflicts. If no package.json exists,
 // args alone are used.
-func resolveTargets(args []string) ([]target, error) {
+func resolveTargets(args []string, opts Options) ([]target, error) {
 	body, err := os.ReadFile("package.json")
 	pjMissing := os.IsNotExist(err)
 	var pjTargets []target
 	if err == nil {
 		body = bytes.TrimPrefix(body, utf8BOM)
-		for _, key := range []string{"dependencies", "devDependencies"} {
+		keys := []string{"dependencies", "devDependencies"}
+		if opts.OmitDev {
+			keys = []string{"dependencies"}
+		}
+		for _, key := range keys {
 			gjson.GetBytes(body, key).ForEach(func(k, v gjson.Result) bool {
 				pjTargets = append(pjTargets, target{name: k.String(), versionSpec: v.String()})
 				return true

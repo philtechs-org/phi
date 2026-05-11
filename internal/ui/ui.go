@@ -282,6 +282,7 @@ Commands:
   phi create <framework> <name>   Scaffold a new project (react, next, express, fastify, nest)
   phi install (i, a) [pkg...]     Scan and install packages (union of args and package.json)
   phi update (u) [pkg...]         Re-resolve and install fresh, ignoring phi.lock
+  phi ci                          Production install: --frozen-lockfile + --yes preset (CI/Railway/Vercel)
   phi remove (rm) <pkg...>        Drop packages from package.json, phi.lock, and node_modules
   phi audit                       Scan all dependencies without installing
   phi audit fix [--apply|--force] Propose fixes for fixable issues; --apply rewrites package.json
@@ -298,7 +299,7 @@ Commands:
   phi version                     Show version
   phi help                        Show this help
 
-Flags (install/update/audit):
+Flags (install/update/audit/ci):
   --allow-scripts a,b       Run lifecycle scripts only for the named packages
   --frozen-lockfile         Require phi.lock to exactly cover package.json (CI mode)
   --no-lockfile             Force fresh resolve, ignore phi.lock
@@ -307,7 +308,9 @@ Flags (install/update/audit):
   --save-peer               Write to peerDependencies
   --save-exact / -E         Pin without caret prefix
   --no-advisories           Skip OSV vulnerability database query (offline mode)
-  --force / -f              Override BLOCKED verdicts and install anyway (report still written)`)
+  --force / -f              Override BLOCKED verdicts and install anyway (report still written)
+  --yes / -y                Auto-approve REVIEW verdicts (non-interactive). Blocked still aborts.
+  --omit=dev                Skip devDependencies during resolution (npm parity, prod installs)`)
 }
 
 type counts struct {

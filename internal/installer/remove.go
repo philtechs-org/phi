@@ -27,7 +27,7 @@ func Remove(args []string) error {
 		return fmt.Errorf("update package.json: %w", err)
 	}
 
-	targets, err := resolveTargets(nil)
+	targets, err := resolveTargets(nil, Options{})
 	if err != nil {
 		return err
 	}

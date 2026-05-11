@@ -78,7 +78,7 @@ func AuditFix(opts FixOptions) error {
 		return errors.New("no direct dependencies in package.json")
 	}
 
-	targets, err := resolveTargets(nil)
+	targets, err := resolveTargets(nil, Options{})
 	if err != nil {
 		return err
 	}

@@ -12,7 +12,7 @@ import (
 
 // version is set by `go build`'s default ("0.1.0-dev") or overridden by
 // goreleaser via -ldflags -X main.version=<tag> on tagged releases.
-var version = "0.3.1"
+var version = "0.4.0"
 
 func main() {
 	// Sweep up the .old binary left by a previous Windows self-update.
@@ -32,6 +32,18 @@ func main() {
 	case "update", "u":
 		opts, rest := parseFlags(args)
 		exitOnErr(installer.UpdateWith(rest, opts))
+	case "ci":
+		// phi ci is sugar for `phi install --frozen-lockfile --yes`. Designed
+		// for production / CI environments (Railway, Vercel, GHA, Docker
+		// builds) that have no TTY for the REVIEW prompt. The frozen
+		// lockfile is the audit record — anything in phi.lock was already
+		// approved by the developer during their `phi install`, so prod can
+		// auto-approve review verdicts. Blocked verdicts still abort unless
+		// --force is passed explicitly.
+		opts, rest := parseFlags(args)
+		opts.Mode = installer.ModeFrozen
+		opts.AutoApproveReview = true
+		exitOnErr(installer.InstallWith(rest, opts))
 	case "remove", "rm", "uninstall":
 		_, rest := parseFlags(args)
 		exitOnErr(installer.Remove(rest))
@@ -115,6 +127,17 @@ func parseFlags(args []string) (installer.Options, []string) {
 			opts.NoAdvisories = true
 		case a == "--force" || a == "-f":
 			opts.Force = true
+		case a == "--yes" || a == "-y":
+			opts.AutoApproveReview = true
+		case a == "--omit" && i+1 < len(args):
+			if args[i+1] == "dev" {
+				opts.OmitDev = true
+			}
+			i++
+		case strings.HasPrefix(a, "--omit="):
+			if strings.TrimPrefix(a, "--omit=") == "dev" {
+				opts.OmitDev = true
+			}
 		default:
 			rest = append(rest, a)
 		}

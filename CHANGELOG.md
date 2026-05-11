@@ -5,6 +5,42 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-11
+
+### Added
+
+- **`phi ci` — production install for non-interactive environments**
+  (Railway, Vercel, Fly, GitHub Actions, Docker builds). Sugar for
+  `phi install --frozen-lockfile --yes`. The frozen lockfile is the
+  audit record — anything in `phi.lock` was already reviewed and
+  approved by the developer during their local `phi install`, so prod
+  can auto-approve review verdicts without a prompt. Blocked verdicts
+  still abort unless `--force` is passed explicitly. Missing or drifted
+  lockfile errors clearly (`phi.lock is out of sync with package.json`),
+  same as `--frozen-lockfile` already did.
+
+- **`-y` / `--yes` flag** on `phi install`, `phi update`, and `phi ci`.
+  Auto-approves REVIEW-verdict packages instead of prompting on stdin
+  — the primitive that `phi ci` is built on, also useful standalone
+  in custom CI scripts that don't want the full `phi ci` defaults.
+  Mirrors the same flag on `phi x` (v0.3.0).
+
+- **`--omit=dev` flag** on `phi install`, `phi update`, `phi ci`, and
+  `phi audit`. Skips `devDependencies` during resolution — npm parity.
+  Useful for prod-deploy bundles where test runners, linters, and
+  build tooling aren't needed in the final image. Both forms accepted
+  (`--omit=dev` and `--omit dev`). Workspace-level filtering is a
+  follow-up — see `DEFERRED.md`.
+
+### Documentation
+
+- New top-level `DEFERRED.md` tracks features that were explicitly
+  considered for a release and punted, with the reason and what would
+  unblock them. Current entries cover items deferred from v0.3.0
+  (git/URL sources, multi-package, cache eviction for `phi x` stages)
+  and v0.4.0 (workspace devDep filtering, `--omit=optional|peer`,
+  per-package approval markers in `phi.lock`, env var equivalents).
+
 ## [0.3.1] — 2026-05-10
 
 ### Fixed
