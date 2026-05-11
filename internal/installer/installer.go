@@ -88,8 +88,8 @@ type Options struct {
 	// OmitDev skips devDependencies during resolution. Matches npm's
 	// --omit=dev semantics. Useful for production installs where test
 	// runners, linters, type defs, and build tooling aren't needed in
-	// the deployed bundle. Only affects the root package.json — see
-	// DEFERRED.md for the workspace-level filtering follow-up.
+	// the deployed bundle. Only affects the root package.json today —
+	// workspace-level filtering is a planned follow-up.
 	OmitDev bool
 }
 

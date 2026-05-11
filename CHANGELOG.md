@@ -30,16 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Useful for prod-deploy bundles where test runners, linters, and
   build tooling aren't needed in the final image. Both forms accepted
   (`--omit=dev` and `--omit dev`). Workspace-level filtering is a
-  follow-up — see `DEFERRED.md`.
-
-### Documentation
-
-- New top-level `DEFERRED.md` tracks features that were explicitly
-  considered for a release and punted, with the reason and what would
-  unblock them. Current entries cover items deferred from v0.3.0
-  (git/URL sources, multi-package, cache eviction for `phi x` stages)
-  and v0.4.0 (workspace devDep filtering, `--omit=optional|peer`,
-  per-package approval markers in `phi.lock`, env var equivalents).
+  follow-up.
 
 ## [0.3.1] — 2026-05-10
 

@@ -36,6 +36,7 @@ suggestions.md
 .claude/
 RELEASE.md
 BUILDLOG.md
+DEFERRED.md
 website/
 
 # Goreleaser local snapshot artifacts
