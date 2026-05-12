@@ -39,6 +39,14 @@ BUILDLOG.md
 DEFERRED.md
 website/
 
+# Work-in-progress modules — kept local until launch, ignored everywhere
+internal/watch/
+cmd/phi-watch/
+cmd/phi-api/
+# defensive catch-alls for sibling/test binaries spawned during dev
+cmd/phi-watch-*/
+cmd/phi-api-*/
+
 # Goreleaser local snapshot artifacts
 dist/
 .vscode/settings.json
