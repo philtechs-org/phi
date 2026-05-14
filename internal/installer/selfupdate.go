@@ -23,12 +23,14 @@ import (
 	"github.com/philtechs-org/phi/internal/ui"
 )
 
-// Self-update endpoints + asset naming. The archive name format is set by
+// Self-update endpoints + asset naming. Release artifacts live in
+// philtechs-org/phi-releases (publish-only, no source); the source repo
+// stays at philtechs-org/phi. The archive name format is set by
 // goreleaser config (phi_<ver>_<OS>_<arch>.<ext>) and matches what the
 // install scripts use, so any release that the install scripts can fetch
 // will also work for self-update.
 const (
-	selfUpdateAPIBase   = "https://api.github.com/repos/philtechs-org/phi/releases"
+	selfUpdateAPIBase   = "https://api.github.com/repos/philtechs-org/phi-releases/releases"
 	selfUpdateUserAgent = "phi-self-update"
 )
 

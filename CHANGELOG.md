@@ -5,6 +5,18 @@ All notable changes to phi are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-05-14
+
+### Changed
+
+- **`phi self-update` now points at `philtechs-org/phi-releases`.**
+  Future release artifacts ship from a dedicated public releases repo
+  so the source repo can stay clean. This release is a bridge: it lives
+  on `philtechs-org/phi/releases` (the old location) so v0.4.0 users
+  can update normally, and after this update their binary will look
+  for newer releases at `phi-releases` going forward. No user-facing
+  command or behavior changes.
+
 ## [0.4.0] — 2026-05-11
 
 ### Added
