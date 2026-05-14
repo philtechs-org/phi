@@ -68,12 +68,14 @@ maintained privately. Public-facing surfaces are split across two repos:
 ## Issues, security, contact
 
 - **Bug reports & feature requests:** email
-  [bugs@phi.philtechs.org](mailto:bugs@phi.philtechs.org). Include the
-  package name, version, and what phi said vs what you expected.
-  False-positive and missed-malware reports get the fastest attention.
-- **Security:** the same address —
-  [bugs@phi.philtechs.org](mailto:bugs@phi.philtechs.org). Please do not
-  file security issues publicly.
+  [bugs@phi.philtechs.org](mailto:bugs@phi.philtechs.org) or open an
+  issue at [github.com/philtechs-org/phi/issues](https://github.com/philtechs-org/phi/issues).
+  Include the package name, version, and what phi said vs what you
+  expected. False-positive and missed-malware reports get the fastest
+  attention.
+- **Security:** email
+  [bugs@phi.philtechs.org](mailto:bugs@phi.philtechs.org). Please do
+  not file security issues publicly.
 - **Docs:** <https://phi.philtechs.org>.
 
 ## License
