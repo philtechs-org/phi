@@ -1,7 +1,0 @@
-node_modules/
-phi.lock
-phi-report.json
-.env
-.env.local
-.DS_Store
-*.log
