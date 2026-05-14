@@ -1,7 +1,8 @@
 # Phi
 
 [![Latest release](https://img.shields.io/github/v/release/philtechs-org/phi-releases?label=release&color=84cc16)](https://github.com/philtechs-org/phi-releases/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/philtechs-org/phi-releases/total?label=downloads&color=84cc16)](https://github.com/philtechs-org/phi-releases/releases)
+[![Downloads (total)](https://img.shields.io/github/downloads/philtechs-org/phi-releases/total?label=downloads&color=84cc16)](https://github.com/philtechs-org/phi-releases/releases)
+[![Downloads (latest)](https://img.shields.io/github/downloads/philtechs-org/phi-releases/latest/total?label=downloads%40latest&color=84cc16)](https://github.com/philtechs-org/phi-releases/releases/latest)
 [![License](https://img.shields.io/github/license/philtechs-org/phi?color=84cc16)](./LICENSE)
 
 **Nothing touches your system unverified.** Phi is install-time interception
